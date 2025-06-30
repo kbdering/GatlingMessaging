@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package io.github.kbdering.kafka.proto;
+
+option java_package = "io.github.kbdering.kafka.proto";
+option java_multiple_files = true;
+
+message DummyRequest {
+  string request_id = 1;
+  string request_payload = 2;
+}
+
+message DummyResponse {
+  string response_id = 1;
+  string request_id_echo = 2; // To correlate with the request
+  string response_payload = 3;
+  bool success = 4;
+}

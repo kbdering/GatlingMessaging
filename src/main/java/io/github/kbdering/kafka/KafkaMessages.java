@@ -9,11 +9,11 @@ public class KafkaMessages {
     }
 
     // Message containing the record to be processed by a worker
-    public static final class ProcessRecord<T> {
-        public final ConsumerRecord<String, T> record;
+    public static final class ProcessRecord { // Made non-generic for simplicity, assuming byte[]
+        public final ConsumerRecord<String, byte[]> record; // Changed to byte[]
         public final long consumeEndTime;
 
-        public ProcessRecord(ConsumerRecord<String, T> record, long consumeEndTime) {
+        public ProcessRecord(ConsumerRecord<String, byte[]> record, long consumeEndTime) {
             this.record = record;
             this.consumeEndTime = consumeEndTime;
         }

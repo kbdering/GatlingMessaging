@@ -10,15 +10,15 @@ import java.util.Map;
 
 public class KafkaProducerActor extends AbstractActor {
 
-    private final KafkaProducer<String, String> producer;
+    private final KafkaProducer<String, byte[]> producer;
 
     public static class ProduceMessage {
         public final String topic;
         public final String key;
-        public final String value;
+        public final byte[] value; // Changed to byte[]
         public final String correlationId;
 
-        public ProduceMessage(String topic, String key, String value, String correlationId) {
+        public ProduceMessage(String topic, String key, byte[] value, String correlationId) {
             this.topic = topic;
             this.key = key;
             this.value = value;
@@ -26,7 +26,7 @@ public class KafkaProducerActor extends AbstractActor {
         }
     }
 
-    public KafkaProducerActor(Map<String, Object> producerProperties) {
+    private KafkaProducerActor(Map<String, Object> producerProperties) { // Made private to enforce props usage
         this.producer = new KafkaProducer<>(producerProperties);
     }
 
@@ -42,7 +42,7 @@ public class KafkaProducerActor extends AbstractActor {
     }
 
     private void handleProduceMessage(ProduceMessage message) {
-        ProducerRecord<String, String> record = new ProducerRecord<>(message.topic, message.key, message.value);
+        ProducerRecord<String, byte[]> record = new ProducerRecord<>(message.topic, message.key, message.value);
         record.headers().add("correlationId", message.correlationId.getBytes());
 
         producer.send(record, (metadata, exception) -> {

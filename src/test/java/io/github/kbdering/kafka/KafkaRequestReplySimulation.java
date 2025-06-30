@@ -1,22 +1,30 @@
 package io.github.kbdering.kafka;
 
-
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import io.gatling.javaapi.core.Session;
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import io.github.kbdering.kafka.cache.InMemoryRequestStore;
-import io.github.kbdering.kafka.cache.PostgresRequestStore;
+// import io.github.kbdering.kafka.cache.PostgresRequestStore; // Uncomment if using Postgres
 import io.github.kbdering.kafka.cache.RequestStore;
 import io.github.kbdering.kafka.javaapi.KafkaDsl;
 import io.github.kbdering.kafka.javaapi.KafkaProtocolBuilder;
 import org.apache.kafka.clients.producer.ProducerConfig;
+// Import your dummy proto classes (assuming they are generated)
+import io.github.kbdering.kafka.proto.DummyRequest;
+import io.github.kbdering.kafka.proto.DummyResponse;
+
 import javax.sql.DataSource;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-
 import static io.gatling.javaapi.core.CoreDsl.*;
 
 public class KafkaRequestReplySimulation extends Simulation {
@@ -31,7 +39,8 @@ public class KafkaRequestReplySimulation extends Simulation {
                         ProducerConfig.ACKS_CONFIG, "all"
                 ));
 
-        // SQL Pool using Hikari, Redis is also an option
+        // Example: SQL Pool using Hikari, Redis is also an option
+        /*
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl("jdbc:postgresql://localhost:5432/yourdb");
         config.setUsername("youruser");
@@ -39,21 +48,86 @@ public class KafkaRequestReplySimulation extends Simulation {
         config.setDriverClassName("org.postgresql.Driver");
         config.setMaximumPoolSize(200);
         DataSource dataSource = new HikariDataSource(config);
-        //RequestStore postgresStore = new PostgresRequestStore(dataSource);
+        RequestStore postgresStore = new PostgresRequestStore(dataSource);
+        kafkaProtocol.requestStore(postgresStore); // Use the builder's method
+        */
 
         //Using inMemory cache for a single-server test
         RequestStore inMemoryStore = new InMemoryRequestStore();
-        kafkaProtocol.setRequestStore(inMemoryStore);
+        kafkaProtocol.requestStore(inMemoryStore); // Use the builder's method
+
+        // Define MessageChecks
+        List<MessageCheck<?, ?>> stringChecks = new ArrayList<>();
+        stringChecks.add(new MessageCheck<>(
+                "Response String Value Check",
+                String.class, SerializationType.STRING, // Expected type of stored request
+                String.class, SerializationType.STRING, // Expected type of incoming response
+                (String deserializedRequest, String deserializedResponse) -> {
+                    if (deserializedRequest == null) {
+                        return Optional.of("Stored request value was null after deserialization.");
+                    }
+                    if (deserializedResponse == null) {
+                        return Optional.of("Received response value was null after deserialization.");
+                    }
+                    if (deserializedRequest.equals(deserializedResponse)) {
+                        return Optional.empty(); // Check passes
+                    } else {
+                        return Optional.of("Response value '" + deserializedResponse + "' does not match expected stored value '" + deserializedRequest + "'");
+                    }
+                }
+        ));
+
+        List<MessageCheck<?, ?>> protoChecks = new ArrayList<>();
+        protoChecks.add(new MessageCheck<>(
+                "Proto Response Check",
+                DummyRequest.class, SerializationType.PROTOBUF,
+                DummyResponse.class, SerializationType.PROTOBUF,
+                (DummyRequest deserializedRequest, DummyResponse deserializedResponse) -> {
+                    if (deserializedRequest == null) {
+                        return Optional.of("Deserialized Protobuf request was null.");
+                    }
+                    if (deserializedResponse == null) {
+                        return Optional.of("Deserialized Protobuf response was null.");
+                    }
+                    // Example check: verify echoed request_id and success status
+                    if (!deserializedRequest.getRequestId().equals(deserializedResponse.getRequestIdEcho())) {
+                        return Optional.of("Protobuf response request_id_echo '" + deserializedResponse.getRequestIdEcho() +
+                                "' does not match original request_id '" + deserializedRequest.getRequestId() + "'");
+                    }
+                    if (!deserializedResponse.getSuccess()) {
+                        return Optional.of("Protobuf response success field was false.");
+                    }
+                    return Optional.empty(); // Check passes
+                }
+        ));
 
 
         ScenarioBuilder scn = scenario("Kafka Request-Reply with Akka")
                 .exec(
+                        session -> session.set("myValueToSend", "TestValue-" + UUID.randomUUID().toString())
+                )
+              /*   .exec(
                         KafkaDsl.kafkaRequestReply("request_topic",
                                 "request_topic",
                                 session -> UUID.randomUUID().toString(),
-                                "Kuba",
-                                kafkaProtocol.protocol(),
+                                session -> session.getString("myValueToSend").getBytes(StandardCharsets.UTF_8),
+                                SerializationType.STRING,
+                                stringChecks, // Pass the list of checks
                                 10, TimeUnit.SECONDS)
+                )  
+                */
+                .exec(
+                        KafkaDsl.kafkaRequestReply("request_topic", "request_topic", 
+                        session -> UUID.randomUUID().toString(),
+                        session -> DummyRequest.newBuilder()
+                                .setRequestId(UUID.randomUUID().toString())
+                                .setRequestPayload(session.getString("myValueToSend"))
+                                .build().toByteArray(),
+                                SerializationType.PROTOBUF,
+                        protoChecks, // Pass the list of checks
+                        10, TimeUnit.SECONDS)   
+
+                        
                 );
 
         setUp(
@@ -65,7 +139,5 @@ public class KafkaRequestReplySimulation extends Simulation {
                         nothingFor(Duration.ofSeconds(20))
                 )
         ).protocols(kafkaProtocol);
-
-
     }
 }

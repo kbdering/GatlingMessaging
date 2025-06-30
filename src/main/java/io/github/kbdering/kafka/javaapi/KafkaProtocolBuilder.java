@@ -7,17 +7,20 @@ import io.gatling.core.config.GatlingConfiguration;
 import io.gatling.core.protocol.Protocol;
 import io.gatling.core.session.Session;
 import io.gatling.javaapi.core.ProtocolBuilder;
+import io.github.kbdering.kafka.MessageCheck;
 import io.github.kbdering.kafka.cache.InMemoryRequestStore;
 import io.github.kbdering.kafka.cache.RedisRequestStore;
 import io.github.kbdering.kafka.cache.RequestStore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringDeserializer; // Keep for Key
+import org.apache.kafka.common.serialization.StringSerializer; // Keep for Key
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
-import java.util.HashMap;
+import java.util.*; // Import List and Collections
 import java.util.Map;
 import java.util.Objects;
 
@@ -134,11 +137,11 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final ActorSystem actorSystem;
         private final int numProducers;
         private final int numConsumers;
-        private RequestStore requestStore;
+        private final RequestStore requestStore;
 
         // Private constructor to enforce creation through the builder
-        private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
-                              ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore) {
+        private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties, 
+                              ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore) { 
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -171,10 +174,6 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public RequestStore getRequestStore() {
             return requestStore;
         }
-
-        public void setRequestStore(RequestStore requestStore) {
-            this.requestStore = requestStore;
-        }
     }
     // Inner class to represent protocol components
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
@@ -189,12 +188,12 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
             @Override
             public KafkaProtocol defaultProtocolValue(GatlingConfiguration configuration) {
-                return null;
+                return new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-gatling-group").numProducers(1).numConsumers(1).build();
             }
 
             @Override
             public Function1<KafkaProtocol, KafkaProtocolComponents> newComponents(CoreComponents coreComponents) {
-                return null;
+                return protocol -> new KafkaProtocolComponents(protocol);
             }
 
 
@@ -273,14 +272,15 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
         producerProperties.putIfAbsent(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         producerProperties.putIfAbsent(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName()); // For byte[]
 
         consumerProperties.putIfAbsent(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         consumerProperties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName()); // For byte[]
         consumerProperties.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         consumerProperties.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+
 
         // Create the concrete KafkaProtocol instance
         return new KafkaProtocol(
