@@ -64,17 +64,25 @@ public class KafkaActionBuilder implements ActionBuilder { //USE io.gatling.core
     }
 
 
-    public Action build(ScenarioContext ctx) {
+
+    public Action build(ScenarioContext ctx, Action next) {
         final Protocol finalKafkaProtocol = (this.kafkaProtocol != null) ? this.kafkaProtocol
                 : ctx.protocolComponentsRegistry().components(KafkaProtocolBuilder.KafkaProtocolComponents.protocolKey).protocol();
 
-        return new KafkaSendAction(finalKafkaProtocol, ctx.coreComponents(), topic, key, value, waitForAck, timeout, timeUnit);
-
+        return new KafkaSendAction(finalKafkaProtocol, ctx.coreComponents(), next, topic, key, value, waitForAck, timeout, timeUnit);
     }
 
     @Override
     public io.gatling.core.action.builder.ActionBuilder asScala() {
-        return null;
+        return new io.gatling.core.action.builder.ActionBuilder() {
+            @Override
+            public Action build(ScenarioContext ctx, Action next) {
+                final Protocol finalKafkaProtocol = (kafkaProtocol != null) ? kafkaProtocol
+                        : ctx.protocolComponentsRegistry().components(KafkaProtocolBuilder.KafkaProtocolComponents.protocolKey).protocol();
+
+                return new KafkaSendAction(finalKafkaProtocol, ctx.coreComponents(), next, KafkaActionBuilder.this.topic, KafkaActionBuilder.this.key, KafkaActionBuilder.this.value, KafkaActionBuilder.this.waitForAck, KafkaActionBuilder.this.timeout, KafkaActionBuilder.this.timeUnit);
+            }
+        };
     }
 
     @Override
@@ -85,7 +93,7 @@ public class KafkaActionBuilder implements ActionBuilder { //USE io.gatling.core
 class KafkaSendAction implements io.gatling.core.action.Action {
 
     private final io.gatling.core.protocol.Protocol kafkaProtocol;
-    private  Action next; // Field to store the next action
+    private final Action next; // Field to store the next action
     private final CoreComponents coreComponents;
     private final String topic;
     private final Function<Session, String> key;
@@ -94,9 +102,10 @@ class KafkaSendAction implements io.gatling.core.action.Action {
     private final long timeout;
     private final TimeUnit timeUnit;
 
-    public KafkaSendAction(Protocol kafkaProtocol, CoreComponents coreComponents, String topic,
+    public KafkaSendAction(Protocol kafkaProtocol, CoreComponents coreComponents, Action next, String topic,
                            Function<Session, String> key, Function<Session, String> value, boolean waitForAck, long timeout, TimeUnit timeUnit) {
         this.kafkaProtocol = kafkaProtocol;
+        this.next = next;
         this.coreComponents = coreComponents;
         this.topic = topic;
         this.key = key;
@@ -185,10 +194,6 @@ class KafkaSendAction implements io.gatling.core.action.Action {
                 }
             }
         });
-    }
-
-    public void setNext(Action next) {
-        this.next = next;
     }
 
     @Override

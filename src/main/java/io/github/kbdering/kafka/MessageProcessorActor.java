@@ -19,14 +19,12 @@ import java.util.Map;
 public class MessageProcessorActor extends AbstractActor {
 
     private final RequestStore requestStore;
-    private final CoreComponents coreComponents;
     private final StatsEngine statsEngine;
     private final List<MessageCheck<?, ?>> checks; // Use wildcard for generic list
 
 
     public MessageProcessorActor(RequestStore requestStore, CoreComponents coreComponents, List<MessageCheck<?, ?>> checks) {
         this.requestStore = requestStore;
-        this.coreComponents = coreComponents;
         this.statsEngine = coreComponents.statsEngine(); // Cache for convenience
         this.checks = checks;
     }
@@ -59,7 +57,7 @@ public class MessageProcessorActor extends AbstractActor {
             long startTime = endTime; // Default start time if lookup fails early
             String transactionName = "Missing Match"; // Default transaction name
             Status status = Status.apply("KO"); // Default status is failure
-            Option<String> errorMessage = Option.apply("Request data not found for correlationId: " + correlationId);
+            Option<String> errorMessage = Option.apply("Request data not found for correlationId");
             Option<String> responseCode = Option.apply("404"); // Simulate Not Found
 
             try {
@@ -107,7 +105,7 @@ public class MessageProcessorActor extends AbstractActor {
                         status = Status.apply("KO");
                         errorMessage = Option.apply(checkFailure.get());
                         responseCode = Option.apply("400"); // Simulate Bad Request due to validation
-                        System.err.println("Validation failed for correlationId " + correlationId + ": " + checkFailure.get());
+                        //System.err.println("Validation failed for correlationId " + correlationId + ": " + checkFailure.get());
                     } else {
                         // All checks passed
                         status = Status.apply("OK");
@@ -118,15 +116,8 @@ public class MessageProcessorActor extends AbstractActor {
                     // Delete the request after processing (regardless of validation outcome)
                     requestStore.deleteRequest(correlationId);
 
-                } else {
-                    // Log request data not found
-                    // Use default status, error message, and response code defined above
-                    System.err.println("Request data not found for correlationId: " + correlationId + " (Response Key: " + responseRecord.key() + ")");
-                }
+                } 
             } catch (Exception e) {
-                // Log processing error
-                System.err.println("Error processing record for correlationId " + correlationId + " (Response Key: " + responseRecord.key() + "): " + e.getMessage());
-                e.printStackTrace(); // Log stack trace for debugging
                 status = Status.apply("KO");
                 errorMessage = Option.apply("Processing error: " + e.getMessage());
                 responseCode = Option.apply("500"); // Simulate Internal Server Error
