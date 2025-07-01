@@ -3,7 +3,6 @@ package io.github.kbdering.kafka;
 import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
 import akka.actor.Props;
-import io.gatling.core.stats.StatsEngine;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -13,7 +12,6 @@ import java.time.Duration; // Use java.time.Duration
 import java.util.Collections; // Use java.util.Collections
 import java.util.Map; // Use java.util.Map
 
-import javax.sound.sampled.SourceDataLine;
 
 import io.gatling.core.CoreComponents;
 

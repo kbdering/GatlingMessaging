@@ -1,8 +1,8 @@
 package io.github.kbdering.kafka;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
-import io.gatling.javaapi.core.Session;
+//import com.zaxxer.hikari.HikariConfig;
+//import com.zaxxer.hikari.HikariDataSource;
+//import io.gatling.javaapi.core.Session;
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import io.github.kbdering.kafka.cache.InMemoryRequestStore;
@@ -15,11 +15,9 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import io.github.kbdering.kafka.proto.DummyRequest;
 import io.github.kbdering.kafka.proto.DummyResponse;
 
-import javax.sql.DataSource;
-import java.nio.charset.StandardCharsets;
+
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,6 +35,11 @@ public class KafkaRequestReplySimulation extends Simulation {
                 .numConsumers(2)
                 .producerProperties(Map.of(
                         ProducerConfig.ACKS_CONFIG, "all"
+                ))
+                .consumerProperties(Map.of(
+                        "auto.offset.reset", "latest",
+                        "max.poll.records", "100",
+                        "fetch.min.bytes", "1"
                 ));
 
         // Example: SQL Pool using Hikari, Redis is also an option
@@ -76,6 +79,26 @@ public class KafkaRequestReplySimulation extends Simulation {
                     }
                 }
         ));
+        List<MessageCheck<?, ?>> sameRequestChecks = new ArrayList<>();
+        sameRequestChecks.add(new MessageCheck<DummyRequest, DummyRequest>(
+                "Proto Response Check",
+                DummyRequest.class, SerializationType.PROTOBUF,
+                DummyRequest.class, SerializationType.PROTOBUF,
+                (DummyRequest deserializedRequest, DummyRequest deserializedResponse) -> {
+                    if (deserializedRequest == null) {
+                        return Optional.of("Deserialized Protobuf request was null.");
+                    }
+                    if (deserializedResponse == null) {
+                        return Optional.of("Deserialized Protobuf response was null.");
+                    }
+                    // Example check: verify echoed request_id and success status
+                    if (!deserializedRequest.getRequestId().equals(deserializedResponse.getRequestId())) {
+                        return Optional.of("Protobuf response request_id_echo '" + deserializedResponse.getRequestId() +
+                                "' does not match original request_id '" + deserializedRequest.getRequestId() + "'");
+                    }
+                    return Optional.empty(); // Check passes
+                }
+        ));
 
         List<MessageCheck<?, ?>> protoChecks = new ArrayList<>();
         protoChecks.add(new MessageCheck<>(
@@ -106,7 +129,7 @@ public class KafkaRequestReplySimulation extends Simulation {
                 .exec(
                         session -> session.set("myValueToSend", "TestValue-" + UUID.randomUUID().toString())
                 )
-              /*   .exec(
+                /*.exec(
                         KafkaDsl.kafkaRequestReply("request_topic",
                                 "request_topic",
                                 session -> UUID.randomUUID().toString(),
@@ -124,7 +147,7 @@ public class KafkaRequestReplySimulation extends Simulation {
                                 .setRequestPayload(session.getString("myValueToSend"))
                                 .build().toByteArray(),
                                 SerializationType.PROTOBUF,
-                        protoChecks, // Pass the list of checks
+                        sameRequestChecks, // Pass the list of checks
                         10, TimeUnit.SECONDS)   
 
                         
@@ -132,8 +155,9 @@ public class KafkaRequestReplySimulation extends Simulation {
 
         setUp(
                 scn.injectOpen(
-                        rampUsersPerSec(10).to(1000).during(60),
-                        constantUsersPerSec(1000).during(60),
+                        nothingFor(Duration.ofSeconds(60)),
+                        rampUsersPerSec(10).to(10000).during(60),
+                        constantUsersPerSec(10000).during(60),
                         rampUsersPerSec(1000).to(10).during(60),
                         // wait for any potential timeouts
                         nothingFor(Duration.ofSeconds(20))
