@@ -41,20 +41,6 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
     private RequestStore requestStore;
 
-    private JedisPoolConfig defaultJedisPoolConfig() {
-        JedisPoolConfig poolConfig = new JedisPoolConfig();
-        poolConfig.setMaxTotal(128);
-        poolConfig.setMaxIdle(128);
-        poolConfig.setMinIdle(16);
-        poolConfig.setTestOnBorrow(true);
-        poolConfig.setTestOnReturn(true);
-        poolConfig.setTestWhileIdle(true);
-        //poolConfig.setMinEvictableIdleTime(Duration.ofMinutes(5));
-        //poolConfig.setTimeBetweenEvictionRuns(Duration.ofMinutes(1));
-        poolConfig.setNumTestsPerEvictionRun(3);
-        poolConfig.setBlockWhenExhausted(true);
-        return poolConfig;
-    }
 
 
     public KafkaProtocolBuilder bootstrapServers(String servers) {
@@ -237,12 +223,12 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
         @Override
         public Function1<Session, Session> onStart() {
-            return null;
+            return session -> session;
         }
 
         @Override
         public Function1<Session, BoxedUnit> onExit() {
-            return null;
+            return session -> BoxedUnit.UNIT;
         }
 
         public scala.Option<KafkaProtocol> defaultProtocolValue(GatlingConfiguration configuration) {

@@ -33,8 +33,5 @@ public class MessageCheck<ReqT, ResT> { // Now generic
     public Class<ResT> getResponseClass() { return responseClass; }
     public SerializationType getResponseSerdeType() { return responseSerdeType; }
     public BiFunction<ReqT, ResT, Optional<String>> getCheckLogic() { return checkLogic; }
-
-    // The actual execution of the check logic will be handled by MessageProcessorActor
-    // after it performs deserialization.
 }
     

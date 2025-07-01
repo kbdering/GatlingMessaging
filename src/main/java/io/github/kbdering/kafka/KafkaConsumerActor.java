@@ -3,7 +3,6 @@ package io.github.kbdering.kafka;
 import akka.actor.AbstractActor;
 import akka.actor.ActorRef;
 import akka.actor.Props;
-import io.gatling.core.stats.StatsEngine;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -12,6 +11,8 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer; // Import By
 import java.time.Duration; // Use java.time.Duration
 import java.util.Collections; // Use java.util.Collections
 import java.util.Map; // Use java.util.Map
+
+
 import io.gatling.core.CoreComponents;
 
 public class KafkaConsumerActor extends AbstractActor {
@@ -42,19 +43,17 @@ public class KafkaConsumerActor extends AbstractActor {
     }
 
     private void consume(Object message) {
-        final StatsEngine statsEngine = coreComponents.statsEngine();
         try {
             while (!Thread.currentThread().isInterrupted()) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(100)); // Changed to byte[]
                 long endTime = coreComponents.clock().nowMillis();
-
                 for (ConsumerRecord<String, byte[]> record : records) { // Changed to byte[]
                     // Create a message to be processed by the MessageProcessorActor
                     KafkaMessages.ProcessRecord processMessage = new KafkaMessages.ProcessRecord(record, endTime);
                     // Send the message to the message processor router
                     messageProcessorRouter.tell(processMessage, getSelf());
                 }
-                consumer.commitAsync();
+                consumer.commitSync();
             }
         } finally {
             consumer.close();

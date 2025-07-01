@@ -44,7 +44,6 @@ public class KafkaProducerActor extends AbstractActor {
     private void handleProduceMessage(ProduceMessage message) {
         ProducerRecord<String, byte[]> record = new ProducerRecord<>(message.topic, message.key, message.value);
         record.headers().add("correlationId", message.correlationId.getBytes());
-
         producer.send(record, (metadata, exception) -> {
                 if (exception instanceof KafkaException){
                     System.err.println("Kafka Producer Error: " + exception.getMessage());
