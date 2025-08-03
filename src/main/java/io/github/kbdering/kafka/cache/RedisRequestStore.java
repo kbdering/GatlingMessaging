@@ -89,4 +89,10 @@ public class RedisRequestStore implements RequestStore {
     public void close() {
         jedisPool.close();
     }
+
+    @Override
+    public void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'processBatchedRecords'");
+    }
 }

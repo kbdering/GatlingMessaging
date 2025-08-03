@@ -13,6 +13,7 @@ public interface RequestStore extends AutoCloseable {
     void storeRequest(String correlationId, String key, byte[] valueBytes, SerializationType serializationType, String transactionName, long startTime, long timeoutMillis);
     Map<String, Object> getRequest(String correlationId); // Value will be byte[], type will be SerializationType
     Map<String, Map<String, Object>> getRequests(List<String> correlationIds);
+    void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process);
     void deleteRequest(String correlationId);
     void close() throws Exception;
 }

@@ -155,7 +155,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         Session gatlingJavaSession = new Session(session); // Gatling Java API Session
         String resolvedKey = keyFunction.apply(gatlingJavaSession);
         byte[] resolvedValueBytes = valueFunction.apply(gatlingJavaSession); // Get byte[]
-        String correlationId = UUID.randomUUID().toString();
+        String correlationId = resolvedKey; //TODO: fix it!!! 
         long startTime = coreComponents.clock().nowMillis();
 
         // Use the RequestStore to store the request

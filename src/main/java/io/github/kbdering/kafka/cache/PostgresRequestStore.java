@@ -35,10 +35,13 @@ public class PostgresRequestStore implements RequestStore {
             throw new RuntimeException("Error storing request in PostgreSQL", e);
         }
     }
+
+
+    
     @Override
     public Map<String, Object> getRequest(String correlationId) {
         // Ensure your table has 'request_value_bytes BYTEA' and 'serialization_type VARCHAR(50)'
-        String sql = "SELECT request_key, request_value_bytes, serialization_type, transaction_name, start_time FROM requests WHERE correlation_id = ? AND expired = FALSE FOR UPDATE";
+        String sql = "SELECT request_key, request_value_bytes, serialization_type, transaction_name, start_time FROM requests WHERE correlation_id = ? AND expired = FALSE FOR UPDATE SKIP LOCKED";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
@@ -119,6 +122,31 @@ public class PostgresRequestStore implements RequestStore {
         return foundRequests;
     }
 
+    public void deleteRequests(List<String> correlationIds) {
+        if (correlationIds == null || correlationIds.isEmpty()) {
+            return;
+        }
+        String sql = "DELETE FROM requests WHERE correlation_id = ANY(?)";
+        try (Connection conn = dataSource.getConnection()) {
+            UUID[] uuidArray = correlationIds.stream().map(UUID::fromString).toArray(UUID[]::new);
+            Array sqlArray = conn.createArrayOf("uuid", uuidArray);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setArray(1, sqlArray);
+                pstmt.executeUpdate();
+            } finally {
+                if (sqlArray != null) {
+                    try {
+                        sqlArray.free();
+                    } catch (SQLException e) {
+                        System.err.println("Error freeing SQL Array: " + e.getMessage());
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Error bulk deleting requests from PostgreSQL", e);
+        }
+    }
+
     @Override
     public void deleteRequest(String correlationId) {
         String sql = "DELETE FROM requests  WHERE correlation_id = ?";
@@ -139,4 +167,58 @@ public class PostgresRequestStore implements RequestStore {
             ((AutoCloseable) dataSource).close();
         }
     }
+
+    @Override
+    public void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+
+        try (Connection conn = dataSource.getConnection())
+
+ {
+            // Use a CTE with DELETE ... RETURNING for efficiency
+            String sql = "DELETE FROM requests r WHERE r.correlation_id = ANY(?) " +
+                    "RETURNING r.correlation_id, r.request_key, r.request_value_bytes, r.serialization_type, r.transaction_name, r.start_time";
+
+            Map<String, Map<String, Object>> foundRequests = new HashMap<>();
+            // create array of correlation IDs from the headers
+
+                    // Create array of UUIDs for the query
+            UUID[] uuidArray = records.keySet().stream().map(UUID::fromString).toArray(UUID[]::new);
+            Array sqlArray = conn.createArrayOf("uuid", uuidArray);
+
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setArray(1, sqlArray);
+
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String correlationId = rs.getObject("correlation_id").toString();
+                        Map<String, Object> requestData = new HashMap<>();
+                        requestData.put(InMemoryRequestStore.KEY, rs.getString("request_key"));
+                        requestData.put(InMemoryRequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
+                        requestData.put(InMemoryRequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
+                        requestData.put(InMemoryRequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
+                        requestData.put(InMemoryRequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
+                        foundRequests.put(correlationId, requestData);
+                    }
+                }
+            } finally {
+                sqlArray.free();
+            }
+
+            // Process all records, distinguishing between matched (and now deleted) and unmatched
+            for (Map.Entry<String, byte[]> recordEntry : records.entrySet()) {
+                String correlationId = recordEntry.getKey();
+                if (foundRequests.containsKey(correlationId)) {
+                    process.onMatch(correlationId, foundRequests.get(correlationId), recordEntry.getValue());
+                } else {
+                    process.onUnmatched(correlationId, recordEntry.getValue());
+                }
+            }
+
+    } catch (SQLException e) {
+            throw new RuntimeException("Error processing batched records from PostgreSQL", e);
+    }
+}
 }
