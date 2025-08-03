@@ -45,4 +45,9 @@ public class InMemoryRequestStore implements RequestStore {
     public void close() throws Exception {
 
     }
+    @Override
+    public void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process) {
+        
+        throw new UnsupportedOperationException("Unimplemented method 'processBatchedRecords'");
+    }
 }

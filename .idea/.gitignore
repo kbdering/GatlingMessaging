@@ -1,3 +1,8 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+/target/*
+/target/
+/.idea/
+*.DS_Store*
+

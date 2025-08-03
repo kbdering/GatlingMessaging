@@ -5,9 +5,10 @@ import akka.actor.Props;
 import io.gatling.commons.stats.Status;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.stats.StatsEngine;
-import io.github.kbdering.kafka.KafkaMessages.ProcessRecord; // Import the message
+import io.github.kbdering.kafka.cache.BatchProcessor;
 import io.github.kbdering.kafka.cache.RequestStore;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+
+
 import scala.Option; // Use Option explicitly
 import scala.collection.immutable.List$; // For empty list
 
@@ -21,12 +22,15 @@ public class MessageProcessorActor extends AbstractActor {
     private final RequestStore requestStore;
     private final StatsEngine statsEngine;
     private final List<MessageCheck<?, ?>> checks; // Use wildcard for generic list
+    private final CoreComponents coreComponents;
+
 
 
     public MessageProcessorActor(RequestStore requestStore, CoreComponents coreComponents, List<MessageCheck<?, ?>> checks) {
         this.requestStore = requestStore;
         this.statsEngine = coreComponents.statsEngine(); // Cache for convenience
         this.checks = checks;
+        this.coreComponents = coreComponents;
     }
 
     public static Props props(RequestStore requestStore, CoreComponents coreComponents, List<MessageCheck<?, ?>> checks) {
@@ -39,42 +43,36 @@ public class MessageProcessorActor extends AbstractActor {
     @Override
     public Receive createReceive() {
         return receiveBuilder()
-                .match(ProcessRecord.class, this::process)
+                .match(Map.class, this::process)
                 .build();
     }
 
-    private void process(ProcessRecord processMessage) {
-        ConsumerRecord<String, byte[]> responseRecord = processMessage.record; // Now byte[]
-        long endTime = processMessage.consumeEndTime; // Use the time the batch was polled
-        String correlationId = null;
+    private void process(Map<String, byte[]> records) {
 
-        // Extract correlationId from response headers
-        if (responseRecord.headers().lastHeader("correlationId") != null) {
-            correlationId = new String(responseRecord.headers().lastHeader("correlationId").value());
-        }
+        long endTime = coreComponents.clock().nowMillis();
 
-        if (correlationId != null) {
-            long startTime = endTime; // Default start time if lookup fails early
-            String transactionName = "Missing Match"; // Default transaction name
-            Status status = Status.apply("KO"); // Default status is failure
-            Option<String> errorMessage = Option.apply("Request data not found for correlationId");
-            Option<String> responseCode = Option.apply("404"); // Simulate Not Found
 
-            try {
-                // Retrieve original request data using the correlation ID
-                Map<String, Object> requestData = requestStore.getRequest(correlationId);
+        requestStore.processBatchedRecords(records,  new BatchProcessor() {
+            @Override
+            public void onMatch(String correlationId, Map<String, Object> requestData, byte[] responseBytes) {
+                String transactionName;
+                Long startTime;
+                Status status;
+                Option<String> errorMessage;
+                Option<String> responseCode;
 
-                if (requestData != null && !requestData.isEmpty()) {
-                    // Update start time and transaction name from stored data
-                    startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
-                    transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME); // Use looked-up name
+                
 
-                    byte[] storedRequestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
-                    SerializationType storedRequestSerdeType = (SerializationType) requestData.get(RequestStore.SERIALIZATION_TYPE);
+                // Update start time and transaction name from stored data
+                startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
+                transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME); // Use looked-up name
 
-                    Optional<String> checkFailure = Optional.empty();
-                    if (checks != null) { // Ensure checks list is not null
-                        for (MessageCheck<?, ?> untypedCheck : checks) {
+                byte[] storedRequestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
+                SerializationType storedRequestSerdeType = (SerializationType) requestData.get(RequestStore.SERIALIZATION_TYPE);
+
+                Optional<String> checkFailure = Optional.empty();
+                if (checks != null) { // Ensure checks list is not null
+                     for (MessageCheck<?, ?> untypedCheck : checks) {
                             // Cast to specific types based on the check's metadata
                             MessageCheck<Object, Object> currentCheck = (MessageCheck<Object, Object>) untypedCheck;
 
@@ -86,7 +84,7 @@ public class MessageProcessorActor extends AbstractActor {
 
                             // For response, we use the type defined in the MessageCheck
                             Object deserializedResponse = SerializationHelper.deserialize(
-                                    responseRecord.value(),
+                                    responseBytes,
                                     currentCheck.getResponseSerdeType(), // Expected response type from check
                                     currentCheck.getResponseClass()
                             );
@@ -112,18 +110,8 @@ public class MessageProcessorActor extends AbstractActor {
                         errorMessage = Option.empty();
                         responseCode = Option.apply("200"); // Simulate OK
                     }
-
-                    // Delete the request after processing (regardless of validation outcome)
-                    requestStore.deleteRequest(correlationId);
-
-                } 
-            } catch (Exception e) {
-                status = Status.apply("KO");
-                errorMessage = Option.apply("Processing error: " + e.getMessage());
-                responseCode = Option.apply("500"); // Simulate Internal Server Error
-            } finally {
-                // Log the response status based on the outcome
-                statsEngine.logResponse(
+                
+                        statsEngine.logResponse(
                         "kafka-processor",
                         List$.MODULE$.empty(),
                         transactionName, // May still be "Missing Match" or the looked-up name if error occurred later
@@ -133,20 +121,31 @@ public class MessageProcessorActor extends AbstractActor {
                         responseCode,
                         errorMessage
                     );
-            }
-        } else {
-            // Log message without correlation ID
-            System.err.println("Received message without correlation ID (Response Key: " + responseRecord.key() + "). Ignoring.");
-            statsEngine.logResponse(
-                    "kafka-processor",
-                    List$.MODULE$.empty(),
-                    "No CorrelationId", // Specific transaction name for this case
-                    endTime, // No meaningful start time
-                    endTime,
-                    Status.apply("KO"),
-                    Option.apply("400"), // Simulate Bad Request?
-                    Option.apply("Message received without correlationId header")
-            );
+
         }
+        @Override
+            public void onUnmatched(String correlationId, byte[] responseBytes) {
+            long startTime = endTime; // Default start time if lookup fails early
+            String transactionName = "Missing Match"; // Default transaction name
+            Status status = Status.apply("KO"); // Default status is failure
+            Option<String> errorMessage = Option.apply("Request data not found for correlationId");
+            Option<String> responseCode = Option.apply("404"); // Simulate Not Found
+                            statsEngine.logResponse(
+                        "kafka-processor",
+                        List$.MODULE$.empty(),
+                        transactionName, // May still be "Missing Match" or the looked-up name if error occurred later
+                        startTime,
+                        endTime,
+                        status,
+                        responseCode,
+                        errorMessage
+                    );
+
+            
     }
-}
+});
+    }   
+};
+
+
+

@@ -11,6 +11,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer; // Import By
 import java.time.Duration; // Use java.time.Duration
 import java.util.Collections; // Use java.util.Collections
 import java.util.Map; // Use java.util.Map
+import java.util.HashMap;
 
 
 import io.gatling.core.CoreComponents;
@@ -46,13 +47,15 @@ public class KafkaConsumerActor extends AbstractActor {
         try {
             while (!Thread.currentThread().isInterrupted()) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(100)); // Changed to byte[]
-                long endTime = coreComponents.clock().nowMillis();
-                for (ConsumerRecord<String, byte[]> record : records) { // Changed to byte[]
-                    // Create a message to be processed by the MessageProcessorActor
-                    KafkaMessages.ProcessRecord processMessage = new KafkaMessages.ProcessRecord(record, endTime);
-                    // Send the message to the message processor router
-                    messageProcessorRouter.tell(processMessage, getSelf());
+                if (records.isEmpty()) {
+                    continue;
                 }
+                // Convert records to a Map<String, ConsumerRecord> to preserve headers
+                Map<String, byte[]> messageMap = new HashMap<>();
+                for (ConsumerRecord<String, byte[]> record : records) {
+                    messageMap.put(record.key(), record.value());
+                }
+                this.messageProcessorRouter.tell(messageMap, getSelf());
                 consumer.commitSync();
             }
         } finally {
