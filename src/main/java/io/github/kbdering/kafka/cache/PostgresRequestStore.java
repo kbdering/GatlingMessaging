@@ -49,11 +49,11 @@ public class PostgresRequestStore implements RequestStore {
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     Map<String, Object> data = new HashMap<>();
-                    data.put(InMemoryRequestStore.KEY, rs.getString("request_key"));
-                    data.put(InMemoryRequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
-                    data.put(InMemoryRequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
-                    data.put(InMemoryRequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
-                    data.put(InMemoryRequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
+                    data.put(RequestStore.KEY, rs.getString("request_key"));
+                    data.put(RequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
+                    data.put(RequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
+                    data.put(RequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
+                    data.put(RequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
                     return data;
                 }
             }
@@ -88,12 +88,12 @@ public class PostgresRequestStore implements RequestStore {
                     while (rs.next()) {
                         Map<String, Object> data = new HashMap<>();
                         String currentCorrelationId = rs.getObject("correlation_id").toString(); // Get UUID as string
-                        data.put(InMemoryRequestStore.KEY, rs.getString("request_key"));
-                        data.put(InMemoryRequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
-                        data.put(InMemoryRequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
-                        data.put(InMemoryRequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
+                        data.put(RequestStore.KEY, rs.getString("request_key"));
+                        data.put(RequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
+                        data.put(RequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
+                        data.put(RequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
                         Timestamp startTimeStamp = rs.getTimestamp("start_time");
-                        data.put(InMemoryRequestStore.START_TIME, startTimeStamp != null ? String.valueOf(startTimeStamp.getTime()) : null);
+                        data.put(RequestStore.START_TIME, startTimeStamp != null ? String.valueOf(startTimeStamp.getTime()) : null);
                         foundRequests.put(currentCorrelationId, data);
                     }
                 }
@@ -195,11 +195,11 @@ public class PostgresRequestStore implements RequestStore {
                     while (rs.next()) {
                         String correlationId = rs.getObject("correlation_id").toString();
                         Map<String, Object> requestData = new HashMap<>();
-                        requestData.put(InMemoryRequestStore.KEY, rs.getString("request_key"));
-                        requestData.put(InMemoryRequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
-                        requestData.put(InMemoryRequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
-                        requestData.put(InMemoryRequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
-                        requestData.put(InMemoryRequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
+                        requestData.put(RequestStore.KEY, rs.getString("request_key"));
+                        requestData.put(RequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
+                        requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
+                        requestData.put(RequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
+                        requestData.put(RequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
                         foundRequests.put(correlationId, requestData);
                     }
                 }
