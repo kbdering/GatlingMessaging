@@ -15,5 +15,11 @@ public interface RequestStore extends AutoCloseable {
     Map<String, Map<String, Object>> getRequests(List<String> correlationIds);
     void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process);
     void deleteRequest(String correlationId);
+    
+    // Timeout handling methods
+    void startTimeoutMonitoring(TimeoutHandler timeoutHandler);
+    void stopTimeoutMonitoring();
+    void processTimeouts(); // For manual timeout processing
+    
     void close() throws Exception;
 }
