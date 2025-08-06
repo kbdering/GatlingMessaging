@@ -4,11 +4,18 @@ package io.github.kbdering.kafka.cache;
 import javax.sql.DataSource;
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import io.github.kbdering.kafka.SerializationType;
 
 public class PostgresRequestStore implements RequestStore {
 
     private final DataSource dataSource;
+    private ScheduledExecutorService timeoutExecutor;
+    private TimeoutHandler timeoutHandler;
+    private final AtomicBoolean monitoringActive = new AtomicBoolean(false);
 
     public PostgresRequestStore(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -20,7 +27,7 @@ public class PostgresRequestStore implements RequestStore {
         // and a 'serialization_type VARCHAR(50)' (or similar) column.
         // The 'start_time' also needs to be stored if it's not already.
         // The 'timeoutMillis' is not directly used here but is part of the interface.
-        String sql = "INSERT INTO requests (correlation_id, request_key, request_value_bytes, serialization_type, transaction_name, start_time) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO requests (correlation_id, request_key, request_value_bytes, serialization_type, transaction_name, start_time, timeout_time) VALUES (?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
@@ -30,9 +37,20 @@ public class PostgresRequestStore implements RequestStore {
             pstmt.setString(4, serializationType.name()); // Store enum name as String
             pstmt.setString(5, transactionName);
             pstmt.setTimestamp(6, new Timestamp(startTime)); // Store startTime
+            
+            // Set timeout timestamp if timeout is specified
+            if (timeoutMillis > 0) {
+                pstmt.setTimestamp(7, new Timestamp(startTime + timeoutMillis));
+            } else {
+                pstmt.setNull(7, Types.TIMESTAMP);
+            }
+            
             pstmt.executeUpdate();
         } catch (SQLException e) {
+            e.printStackTrace();
+            System.err.println(e.getMessage());
             throw new RuntimeException("Error storing request in PostgreSQL", e);
+        
         }
     }
 
@@ -162,7 +180,80 @@ public class PostgresRequestStore implements RequestStore {
     }
 
     @Override
+    public void startTimeoutMonitoring(TimeoutHandler timeoutHandler) {
+        this.timeoutHandler = timeoutHandler;
+        if (monitoringActive.compareAndSet(false, true)) {
+            timeoutExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "PostgresRequestStore-TimeoutMonitor");
+                t.setDaemon(true);
+                return t;
+            });
+            // Check for timeouts every 15 seconds
+            timeoutExecutor.scheduleWithFixedDelay(this::processTimeouts, 15, 15, TimeUnit.SECONDS);
+        }
+    }
+    
+    @Override
+    public void stopTimeoutMonitoring() {
+        if (monitoringActive.compareAndSet(true, false)) {
+            if (timeoutExecutor != null) {
+                timeoutExecutor.shutdown();
+                try {
+                    if (!timeoutExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                        timeoutExecutor.shutdownNow();
+                    }
+                } catch (InterruptedException e) {
+                    timeoutExecutor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                }
+                timeoutExecutor = null;
+            }
+        }
+        this.timeoutHandler = null;
+    }
+    
+    @Override
+    public void processTimeouts() {
+        if (timeoutHandler == null) {
+            return;
+        }
+        
+        try (Connection conn = dataSource.getConnection()) {
+            // Use a CTE with DELETE ... RETURNING to atomically find and remove timed out requests
+            // This ensures only one instance processes each timeout in distributed environment
+            String sql = "DELETE FROM requests " +
+                    "WHERE timeout_time IS NOT NULL " +
+                    "AND timeout_time <= CURRENT_TIMESTAMP " +
+                    "AND expired = FALSE " +
+                    "RETURNING correlation_id, request_key, request_value_bytes, serialization_type, transaction_name, start_time";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+                
+                while (rs.next()) {
+                    String correlationId = rs.getObject("correlation_id").toString();
+                    Map<String, Object> requestData = new HashMap<>();
+                    requestData.put(RequestStore.KEY, rs.getString("request_key"));
+                    requestData.put(RequestStore.VALUE_BYTES, rs.getBytes("request_value_bytes"));
+                    requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.valueOf(rs.getString("serialization_type")));
+                    requestData.put(RequestStore.TRANSACTION_NAME, rs.getString("transaction_name"));
+                    requestData.put(RequestStore.START_TIME, String.valueOf(rs.getTimestamp("start_time").getTime()));
+                    
+                    try {
+                        timeoutHandler.onTimeout(correlationId, requestData);
+                    } catch (Exception e) {
+                        System.err.println("Error processing timeout for correlationId " + correlationId + ": " + e.getMessage());
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error processing timeouts in PostgreSQL: " + e.getMessage());
+        }
+    }
+
+    @Override
     public void close() throws Exception {
+        stopTimeoutMonitoring();
         if (dataSource instanceof AutoCloseable) {
             ((AutoCloseable) dataSource).close();
         }

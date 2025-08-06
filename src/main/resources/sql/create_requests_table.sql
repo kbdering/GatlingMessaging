@@ -8,6 +8,7 @@ CREATE TABLE requests(
     transaction_name varchar(255) NOT NULL,
     start_time timestamp with time zone NOT NULL,
     expired boolean NOT NULL DEFAULT false,
+    timeout_time timestamp with time zone, 
     PRIMARY KEY(correlation_id)
 ) PARTITION BY HASH(correlation_id);
 
