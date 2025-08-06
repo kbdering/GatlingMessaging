@@ -1,6 +1,8 @@
 package io.github.kbdering.kafka.cache;
 
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,9 +33,18 @@ public class InMemoryRequestStore implements RequestStore {
 
     @Override
     public Map<String, Map<String, Object>> getRequests(List<String> correlationIds) {
-        // Implementation for batch get - for simplicity, returning null as in original
-        // A proper implementation would iterate IDs and collect from cache.
-        return null; 
+        if (correlationIds == null || correlationIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        
+        Map<String, Map<String, Object>> foundRequests = new HashMap<>();
+        for (String correlationId : correlationIds) {
+            Map<String, Object> requestData = cache.get(correlationId);
+            if (requestData != null) {
+                foundRequests.put(correlationId, requestData);
+            }
+        }
+        return foundRequests;
     }
 
     @Override
@@ -47,7 +58,20 @@ public class InMemoryRequestStore implements RequestStore {
     }
     @Override
     public void processBatchedRecords(Map<String, byte[]> records, BatchProcessor process) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
         
-        throw new UnsupportedOperationException("Unimplemented method 'processBatchedRecords'");
+        // Process all records, distinguishing between matched (and now deleted) and unmatched
+        for (Map.Entry<String, byte[]> recordEntry : records.entrySet()) {
+            String correlationId = recordEntry.getKey();
+            Map<String, Object> requestData = cache.remove(correlationId); // Get and remove atomically
+            
+            if (requestData != null) {
+                process.onMatch(correlationId, requestData, recordEntry.getValue());
+            } else {
+                process.onUnmatched(correlationId, recordEntry.getValue());
+            }
+        }
     }
 }
