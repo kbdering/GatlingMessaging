@@ -1,13 +1,8 @@
 package io.github.kbdering.kafka;
 
-//import com.zaxxer.hikari.HikariConfig;
-//import com.zaxxer.hikari.HikariDataSource;
-//import io.gatling.javaapi.core.Session;
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
-import io.github.kbdering.kafka.cache.InMemoryRequestStore;
 import io.github.kbdering.kafka.cache.PostgresRequestStore;
-// import io.github.kbdering.kafka.cache.PostgresRequestStore; // Uncomment if using Postgres
 import io.github.kbdering.kafka.cache.RequestStore;
 import io.github.kbdering.kafka.javaapi.KafkaDsl;
 import io.github.kbdering.kafka.javaapi.KafkaProtocolBuilder;
@@ -38,7 +33,7 @@ public class KafkaRequestReplySimulation extends Simulation {
     {
         KafkaProtocolBuilder kafkaProtocol = KafkaDsl.kafka()
                 .bootstrapServers("localhost:9092")
-                .groupId("gatling-consumer-group")
+                .groupId("gatling-consumer-group-postgres")
                 .numProducers(10)
                 .numConsumers(3)
                 .producerProperties(Map.of(
@@ -48,9 +43,6 @@ public class KafkaRequestReplySimulation extends Simulation {
                         "auto.offset.reset", "latest",
                         "fetch.min.bytes", "1"
                 ));
-
-        InMemoryRequestStore store = new InMemoryRequestStore();
-        kafkaProtocol.requestStore(store); // Use the builder's method
 
         // Example: SQL Pool using Hikari, Redis is also an option
         HikariConfig config = new HikariConfig();
@@ -62,11 +54,6 @@ public class KafkaRequestReplySimulation extends Simulation {
         DataSource dataSource = new HikariDataSource(config);
         RequestStore postgresStore = new PostgresRequestStore(dataSource);
         kafkaProtocol.requestStore(postgresStore); // Use the builder's method
-        
-
-        //Using inMemory cache for a single-server test
-        //RequestStore inMemoryStore = new InMemoryRequestStore();
-       //kafkaProtocol.requestStore(inMemoryStore); // Use the builder's method
 
         // Define MessageChecks
         List<MessageCheck<?, ?>> stringChecks = new ArrayList<>();
@@ -134,7 +121,7 @@ public class KafkaRequestReplySimulation extends Simulation {
         ));
 
 
-        ScenarioBuilder scn = scenario("Kafka Request-Reply with Akka")
+        ScenarioBuilder scn = scenario("Kafka Request-Reply with PostgresStore")
                 .exec(
                         session -> session.set("myValueToSend", "TestValue-" + UUID.randomUUID().toString())
                 )
