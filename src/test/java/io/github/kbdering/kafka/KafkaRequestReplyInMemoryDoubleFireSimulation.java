@@ -2,12 +2,11 @@ package io.github.kbdering.kafka;
 
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
-import io.github.kbdering.kafka.cache.RedisRequestStore;
+import io.github.kbdering.kafka.cache.InMemoryRequestStore;
 import io.github.kbdering.kafka.cache.RequestStore;
 import io.github.kbdering.kafka.javaapi.KafkaDsl;
 import io.github.kbdering.kafka.javaapi.KafkaProtocolBuilder;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import redis.clients.jedis.JedisPool;
 
 // Import your dummy proto classes
 import io.github.kbdering.kafka.proto.DummyRequest;
@@ -22,12 +21,12 @@ import java.util.concurrent.TimeUnit;
 
 import static io.gatling.javaapi.core.CoreDsl.*;
 
-public class KafkaRequestReplyRedisSimulation extends Simulation {
+public class KafkaRequestReplyInMemoryDoubleFireSimulation extends Simulation {
 
     {
         KafkaProtocolBuilder kafkaProtocol = KafkaDsl.kafka()
                 .bootstrapServers("localhost:9092")
-                .groupId("gatling-consumer-group-redis") // Use a unique group ID
+                .groupId("gatling-consumer-group-inmemory-double-fire") // Use a unique group ID
                 .numProducers(10)
                 .numConsumers(3)
                 .producerProperties(Map.of(
@@ -38,13 +37,9 @@ public class KafkaRequestReplyRedisSimulation extends Simulation {
                         "fetch.min.bytes", "1"
                 ));
 
-        // Configure Redis Request Store
-        JedisPool jedisPool = new JedisPool("localhost", 6379);
-        jedisPool.setMaxTotal(800);
-        jedisPool.setMinIdle(400);
-        jedisPool.setMaxIdle(400);
-        RequestStore redisStore = new RedisRequestStore(jedisPool);
-        kafkaProtocol.requestStore(redisStore);
+        // Using inMemory cache for a single-server test
+        RequestStore inMemoryStore = new InMemoryRequestStore();
+        kafkaProtocol.requestStore(inMemoryStore);
 
         // Define MessageChecks
         List<MessageCheck<?, ?>> sameRequestChecks = new ArrayList<>();
@@ -68,9 +63,20 @@ public class KafkaRequestReplyRedisSimulation extends Simulation {
                 }
         ));
 
-        ScenarioBuilder scn = scenario("Kafka Request-Reply with RedisStore")
+        ScenarioBuilder scn = scenario("Kafka Request-Reply with InMemoryStore Double Fire")
                 .exec(
                         session -> session.set("myValueToSend", "TestValue-" + UUID.randomUUID().toString())
+                )
+                .exec(
+                        KafkaDsl.kafkaRequestReply("request_topic", "request_topic",
+                                session -> UUID.randomUUID().toString(),
+                                session -> DummyRequest.newBuilder()
+                                        .setRequestId(UUID.randomUUID().toString())
+                                        .setRequestPayload(session.getString("myValueToSend"))
+                                        .build().toByteArray(),
+                                SerializationType.PROTOBUF,
+                                sameRequestChecks,
+                                10, TimeUnit.SECONDS)
                 )
                 .exec(
                         KafkaDsl.kafkaRequestReply("request_topic", "request_topic",
@@ -87,9 +93,9 @@ public class KafkaRequestReplyRedisSimulation extends Simulation {
         setUp(
                 scn.injectOpen(
                         nothingFor(Duration.ofSeconds(60)),
-                        rampUsersPerSec(10).to(20000).during(60),
-                        constantUsersPerSec(20000).during(120),
-                        rampUsersPerSec(20000).to(10).during(60),
+                        rampUsersPerSec(10).to(10000).during(60),
+                        constantUsersPerSec(10000).during(120),
+                        rampUsersPerSec(10000).to(10).during(60),
                         nothingFor(Duration.ofSeconds(60))
                 )
         ).protocols(kafkaProtocol);
