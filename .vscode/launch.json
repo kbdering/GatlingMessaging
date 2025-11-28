@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug Gatling Maven Test",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 8000, // Or the port you configured in MAVEN_OPTS (e.g., 5005)
+            "projectName": "YourMavenProjectName" // Optional, but can help if you have multiple Java projects
+        }
+    ]
+}
