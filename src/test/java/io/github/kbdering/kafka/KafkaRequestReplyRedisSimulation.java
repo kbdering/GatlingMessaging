@@ -73,7 +73,7 @@ public class KafkaRequestReplyRedisSimulation extends Simulation {
                         session -> session.set("myValueToSend", "TestValue-" + UUID.randomUUID().toString())
                 )
                 .exec(
-                        KafkaDsl.kafkaRequestReply("request_topic", "response_topic",
+                        KafkaDsl.kafkaRequestReply("request_topic", "request_topic",
                                 session -> UUID.randomUUID().toString(),
                                 session -> DummyRequest.newBuilder()
                                         .setRequestId(UUID.randomUUID().toString())
