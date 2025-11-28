@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: io.github.kbdering.kafka.KafkaConsumerActorTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.264 s -- in io.github.kbdering.kafka.KafkaConsumerActorTest

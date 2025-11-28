@@ -1,33 +1,39 @@
 
 package io.github.kbdering.kafka.javaapi;
 
-import akka.actor.ActorSystem;
+import org.apache.pekko.actor.ActorRef;
+import org.apache.pekko.actor.ActorSystem;
+import org.apache.pekko.routing.RoundRobinPool;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.config.GatlingConfiguration;
 import io.gatling.core.protocol.Protocol;
 import io.gatling.core.session.Session;
 import io.gatling.javaapi.core.ProtocolBuilder;
+import io.github.kbdering.kafka.actors.KafkaConsumerActor;
+import io.github.kbdering.kafka.actors.KafkaMessages;
+import io.github.kbdering.kafka.actors.KafkaProducerActor;
 import io.github.kbdering.kafka.MessageCheck;
+import io.github.kbdering.kafka.actors.MessageProcessorActor;
+import io.github.kbdering.kafka.extractors.CorrelationExtractor;
 import io.github.kbdering.kafka.cache.InMemoryRequestStore;
-import io.github.kbdering.kafka.cache.RedisRequestStore;
 import io.github.kbdering.kafka.cache.RequestStore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringDeserializer; // Keep for Key
-import org.apache.kafka.common.serialization.StringSerializer; // Keep for Key
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
-import java.util.*; // Import List and Collections
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
-import io.gatling.core.protocol.ProtocolKey; // Import ProtocolKey
+import io.gatling.core.protocol.ProtocolKey;
 import scala.Function1;
 import scala.runtime.BoxedUnit;
-
 
 public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
@@ -36,74 +42,60 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     private String bootstrapServers = null;
     private String groupId = null;
     private ActorSystem actorSystem = null;
-    private int numProducers = 0;
-    private int numConsumers = 0;
-
+    private int numProducers = 1;
+    private int numConsumers = 1;
     private RequestStore requestStore;
+    private CorrelationExtractor correlationExtractor;
 
+    private Duration pollTimeout = Duration.ofMillis(100);
 
+    public KafkaProtocolBuilder pollTimeout(Duration timeout) {
+        this.pollTimeout = timeout;
+        return this;
+    }
+
+    public KafkaProtocolBuilder correlationExtractor(CorrelationExtractor extractor) {
+        this.correlationExtractor = extractor;
+        return this;
+    }
 
     public KafkaProtocolBuilder bootstrapServers(String servers) {
-        Objects.requireNonNull(servers, "bootstrapServers must not be null");
         this.bootstrapServers = servers;
         return this;
     }
 
     public KafkaProtocolBuilder actorSystem(ActorSystem system) {
-        Objects.requireNonNull(system, "actorSystem must not be null");
         this.actorSystem = system;
         return this;
     }
 
     public KafkaProtocolBuilder numProducers(int numProducers) {
-        if (numProducers <= 0) {
-            throw new IllegalArgumentException("numProducers must be greater than 0");
-        }
         this.numProducers = numProducers;
         return this;
     }
 
     public KafkaProtocolBuilder numConsumers(int numConsumers) {
-        if (numConsumers <= 0) {
-            throw new IllegalArgumentException("numConsumers must be greater than 0");
-        }
         this.numConsumers = numConsumers;
         return this;
     }
 
     public KafkaProtocolBuilder groupId(String groupId) {
-        Objects.requireNonNull(groupId, "groupId must not be null");
         this.groupId = groupId;
         return this;
     }
 
-    public KafkaProtocolBuilder producerProperty(String key, Object value) {
-        Objects.requireNonNull(key, "key must not be null");
-        Objects.requireNonNull(value, "value must not be null");
-        producerProperties.put(key, value);
-        return this;
-    }
-
     public KafkaProtocolBuilder producerProperties(Map<String, Object> props) {
-        Objects.requireNonNull(props, "props must not be null");
         producerProperties.putAll(props);
         return this;
     }
 
-    public KafkaProtocolBuilder consumerProperty(String key, Object value) {
-        Objects.requireNonNull(key, "key must not be null");
-        Objects.requireNonNull(value, "value must not be null");
-        consumerProperties.put(key, value);
-        return this;
-    }
-
     public KafkaProtocolBuilder consumerProperties(Map<String, Object> props) {
-        Objects.requireNonNull(props, "props must not be null");
         consumerProperties.putAll(props);
         return this;
     }
+
     public KafkaProtocolBuilder requestStore(RequestStore requestStore) {
-        this.requestStore = Objects.requireNonNull(requestStore, "requestStore must not be null");
+        this.requestStore = requestStore;
         return this;
     }
 
@@ -112,11 +104,16 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return build();
     }
 
-    public void setRequestStore(RequestStore requestStore) {
-        this.requestStore = requestStore;
+    public static class ConsumerAndProcessor {
+        public final ActorRef consumerRouter;
+        public final ActorRef messageProcessorRouter;
+
+        public ConsumerAndProcessor(ActorRef consumerRouter, ActorRef messageProcessorRouter) {
+            this.consumerRouter = consumerRouter;
+            this.messageProcessorRouter = messageProcessorRouter;
+        }
     }
 
-    // Inner class to hold the actual protocol configuration
     public static class KafkaProtocol implements Protocol {
         private final Map<String, Object> producerProperties;
         private final Map<String, Object> consumerProperties;
@@ -124,19 +121,24 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final int numProducers;
         private final int numConsumers;
         private final RequestStore requestStore;
+        private final CorrelationExtractor correlationExtractor;
+        private final Duration pollTimeout;
+        private ActorRef producerRouter;
+        private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
-        // Private constructor to enforce creation through the builder
-        private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties, 
-                              ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore) { 
+        private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
+                ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
+                CorrelationExtractor correlationExtractor, Duration pollTimeout) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
             this.numProducers = numProducers;
             this.numConsumers = numConsumers;
             this.requestStore = requestStore;
+            this.correlationExtractor = correlationExtractor;
+            this.pollTimeout = pollTimeout;
         }
 
-        // Public getter methods for the configuration
         public Map<String, Object> getProducerProperties() {
             return producerProperties;
         }
@@ -160,123 +162,132 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public RequestStore getRequestStore() {
             return requestStore;
         }
+
+        public CorrelationExtractor getCorrelationExtractor() {
+            return correlationExtractor;
+        }
+
+        public Duration getPollTimeout() {
+            return pollTimeout;
+        }
+
+        public ActorRef getProducerRouter() {
+            return producerRouter;
+        }
+
+        public void setProducerRouter(ActorRef producerRouter) {
+            this.producerRouter = producerRouter;
+        }
+
+        public ConsumerAndProcessor getConsumerAndProcessor(String topic) {
+            return consumerAndProcessorsByTopic.get(topic);
+        }
+
+        public void putConsumerAndProcessor(String topic, ConsumerAndProcessor consumerAndProcessor) {
+            this.consumerAndProcessorsByTopic.put(topic, consumerAndProcessor);
+        }
     }
-    // Inner class to represent protocol components
+
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
-
         private final KafkaProtocol kafkaProtocol;
-        public static final ProtocolKey<KafkaProtocol,KafkaProtocolComponents> protocolKey = new ProtocolKey<KafkaProtocol,KafkaProtocolComponents>(){
+        private final CoreComponents coreComponents;
 
-            @Override
-            public Class<io.gatling.core.protocol.Protocol> protocolClass() {
-                return (Class<io.gatling.core.protocol.Protocol>) (Class<?>) KafkaProtocol.class; // Corrected
-            }
-
-            @Override
-            public KafkaProtocol defaultProtocolValue(GatlingConfiguration configuration) {
-                return new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-gatling-group").numProducers(1).numConsumers(1).build();
-            }
-
-            @Override
-            public Function1<KafkaProtocol, KafkaProtocolComponents> newComponents(CoreComponents coreComponents) {
-                return protocol -> new KafkaProtocolComponents(protocol);
-            }
-
-
-            public KafkaProtocolComponents protocolComponents(io.gatling.core.session.Session session) {
-                throw new UnsupportedOperationException("Unimplemented method 'protocolComponents'");
-            }
-
-            public KafkaProtocol protocol(io.gatling.core.session.Session session) {
-                throw new UnsupportedOperationException("Unimplemented method 'protocol'");
-            }
-
-
-        };
-        public KafkaProtocolComponents(KafkaProtocol kafkaProtocol) {
+        public KafkaProtocolComponents(KafkaProtocol kafkaProtocol, CoreComponents coreComponents) {
             this.kafkaProtocol = kafkaProtocol;
+            this.coreComponents = coreComponents;
+            if (kafkaProtocol.getProducerRouter() == null) {
+                ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
+                        new RoundRobinPool(kafkaProtocol.getNumProducers())
+                                .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
+                        "kafkaProducerRouter-" + coreComponents.toString());
+                kafkaProtocol.setProducerRouter(producerRouter);
+            }
         }
 
-        public Protocol protocol() {
-            return this.kafkaProtocol;
-        }
-
-        public ProtocolKey<KafkaProtocol, ?> key() {
-            return this.protocolKey;
-
-        }
-
-        public KafkaProtocol protocol(io.gatling.core.session.Session session) {
-            return this.kafkaProtocol;
-
-        }
-
-        public void start() {
-            // TODO Auto-generated method stub
-
-        }
-
-        public void stop() {
-            // TODO Auto-generated method stub
-
-        }
-
-        @Override
         public Function1<Session, Session> onStart() {
+            kafkaProtocol.getRequestStore().startTimeoutMonitoring(new io.github.kbdering.kafka.cache.TimeoutHandler() {
+                @Override
+                public void onTimeout(String correlationId, Map<String, Object> requestData) {
+                    long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
+                    long endTime = System.currentTimeMillis();
+                    String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
+                    String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
+
+                    coreComponents.statsEngine().logResponse(
+                            scenarioName,
+                            scala.collection.immutable.List$.MODULE$.empty(),
+                            transactionName,
+                            startTime,
+                            endTime,
+                            io.gatling.commons.stats.Status.apply("KO"),
+                            scala.Option.apply("504"),
+                            scala.Option.apply("Request timed out"));
+                }
+            });
             return session -> session;
         }
 
-        @Override
         public Function1<Session, BoxedUnit> onExit() {
-            return session -> BoxedUnit.UNIT;
+            return session -> {
+                kafkaProtocol.getRequestStore().stopTimeoutMonitoring();
+                return BoxedUnit.UNIT;
+            };
         }
 
-        public scala.Option<KafkaProtocol> defaultProtocolValue(GatlingConfiguration configuration) {
-            // Provide a default KafkaProtocol instance if none is configured.
-            // This is crucial for late binding.  We create a *minimal*
-            // KafkaProtocol here, enough to satisfy Gatling's internal checks.
-            // The *actual* configuration will be used if the user provides one.
-            return scala.Option.apply(new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-group").build());
+        public Protocol protocol() {
+            return kafkaProtocol;
         }
+
+        public static final ProtocolKey<KafkaProtocol, KafkaProtocolComponents> protocolKey = new ProtocolKey<>() {
+            public Class<Protocol> protocolClass() {
+                return (Class<Protocol>) (Class<?>) KafkaProtocol.class;
+            }
+
+            public KafkaProtocol defaultProtocolValue(GatlingConfiguration configuration) {
+                return new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-gatling-group")
+                        .build();
+            }
+
+            public Function1<KafkaProtocol, KafkaProtocolComponents> newComponents(CoreComponents coreComponents) {
+                return kafkaProtocol -> new KafkaProtocolComponents(kafkaProtocol, coreComponents);
+            }
+        };
     }
 
     public KafkaProtocol build() {
-        if (bootstrapServers == null) {
-            throw new IllegalStateException("bootstrapServers must be set before building the protocol.");
-        }
-        if (groupId == null) {
-            throw new IllegalStateException("groupId must be set for request-reply");
-        }
+        Objects.requireNonNull(bootstrapServers, "bootstrapServers must not be set");
+        Objects.requireNonNull(groupId, "groupId must be set for request-reply");
+
         if (actorSystem == null) {
             actorSystem = ActorSystem.create("GatlingKafkaSystem");
         }
 
-        if (requestStore == null) { // Use InMemory if not requestStore provided
+        if (requestStore == null) {
             requestStore = new InMemoryRequestStore();
-
         }
 
         producerProperties.putIfAbsent(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         producerProperties.putIfAbsent(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName()); // For byte[]
+        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                ByteArraySerializer.class.getName());
 
         consumerProperties.putIfAbsent(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        consumerProperties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName()); // For byte[]
+        consumerProperties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                StringDeserializer.class.getName());
+        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                ByteArrayDeserializer.class.getName());
         consumerProperties.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         consumerProperties.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
-        consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
-
-        // Create the concrete KafkaProtocol instance
         return new KafkaProtocol(
-                new HashMap<>(this.producerProperties),
-                new HashMap<>(this.consumerProperties),
-                this.actorSystem,
-                this.numProducers,
-                this.numConsumers,
-                this.requestStore
-        );
-
+                new HashMap<>(producerProperties),
+                new HashMap<>(consumerProperties),
+                actorSystem,
+                numProducers,
+                numConsumers,
+                requestStore,
+                correlationExtractor,
+                pollTimeout);
     }
 }
