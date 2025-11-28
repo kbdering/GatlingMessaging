@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: io.github.kbdering.kafka.integration.CustomObjectSerializationTest
--------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.439 s -- in io.github.kbdering.kafka.integration.CustomObjectSerializationTest

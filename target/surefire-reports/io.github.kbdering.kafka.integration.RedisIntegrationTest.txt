@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: io.github.kbdering.kafka.integration.RedisIntegrationTest
--------------------------------------------------------------------------------
-Tests run: 3, Failures: 0, Errors: 0, Skipped: 3, Time elapsed: 0 s -- in io.github.kbdering.kafka.integration.RedisIntegrationTest
