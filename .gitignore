@@ -1,0 +1,4 @@
+*.DS_Store
+jmeter.log
+/target/*
+*.hprof

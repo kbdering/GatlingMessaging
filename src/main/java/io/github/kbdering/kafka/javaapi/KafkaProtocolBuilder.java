@@ -1,19 +1,20 @@
 
 package io.github.kbdering.kafka.javaapi;
 
-import akka.actor.ActorRef;
-import akka.actor.ActorSystem;
-import akka.routing.RoundRobinPool;
+import org.apache.pekko.actor.ActorRef;
+import org.apache.pekko.actor.ActorSystem;
+import org.apache.pekko.routing.RoundRobinPool;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.config.GatlingConfiguration;
 import io.gatling.core.protocol.Protocol;
 import io.gatling.core.session.Session;
 import io.gatling.javaapi.core.ProtocolBuilder;
-import io.github.kbdering.kafka.KafkaConsumerActor;
-import io.github.kbdering.kafka.KafkaMessages;
-import io.github.kbdering.kafka.KafkaProducerActor;
+import io.github.kbdering.kafka.actors.KafkaConsumerActor;
+import io.github.kbdering.kafka.actors.KafkaMessages;
+import io.github.kbdering.kafka.actors.KafkaProducerActor;
 import io.github.kbdering.kafka.MessageCheck;
-import io.github.kbdering.kafka.MessageProcessorActor;
+import io.github.kbdering.kafka.actors.MessageProcessorActor;
+import io.github.kbdering.kafka.extractors.CorrelationExtractor;
 import io.github.kbdering.kafka.cache.InMemoryRequestStore;
 import io.github.kbdering.kafka.cache.RequestStore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -23,6 +24,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,19 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     private int numProducers = 1;
     private int numConsumers = 1;
     private RequestStore requestStore;
+    private CorrelationExtractor correlationExtractor;
+
+    private Duration pollTimeout = Duration.ofMillis(100);
+
+    public KafkaProtocolBuilder pollTimeout(Duration timeout) {
+        this.pollTimeout = timeout;
+        return this;
+    }
+
+    public KafkaProtocolBuilder correlationExtractor(CorrelationExtractor extractor) {
+        this.correlationExtractor = extractor;
+        return this;
+    }
 
     public KafkaProtocolBuilder bootstrapServers(String servers) {
         this.bootstrapServers = servers;
@@ -106,17 +121,22 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final int numProducers;
         private final int numConsumers;
         private final RequestStore requestStore;
+        private final CorrelationExtractor correlationExtractor;
+        private final Duration pollTimeout;
         private ActorRef producerRouter;
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
-                              ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore) {
+                ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
+                CorrelationExtractor correlationExtractor, Duration pollTimeout) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
             this.numProducers = numProducers;
             this.numConsumers = numConsumers;
             this.requestStore = requestStore;
+            this.correlationExtractor = correlationExtractor;
+            this.pollTimeout = pollTimeout;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -143,6 +163,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             return requestStore;
         }
 
+        public CorrelationExtractor getCorrelationExtractor() {
+            return correlationExtractor;
+        }
+
+        public Duration getPollTimeout() {
+            return pollTimeout;
+        }
+
         public ActorRef getProducerRouter() {
             return producerRouter;
         }
@@ -156,30 +184,54 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         }
 
         public void putConsumerAndProcessor(String topic, ConsumerAndProcessor consumerAndProcessor) {
-            consumerAndProcessorsByTopic.put(topic, consumerAndProcessor);
+            this.consumerAndProcessorsByTopic.put(topic, consumerAndProcessor);
         }
     }
 
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
         private final KafkaProtocol kafkaProtocol;
+        private final CoreComponents coreComponents;
 
         public KafkaProtocolComponents(KafkaProtocol kafkaProtocol, CoreComponents coreComponents) {
             this.kafkaProtocol = kafkaProtocol;
+            this.coreComponents = coreComponents;
             if (kafkaProtocol.getProducerRouter() == null) {
                 ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
-                        new RoundRobinPool(kafkaProtocol.getNumProducers()).props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
-                        "kafkaProducerRouter-" + coreComponents.toString()
-                );
+                        new RoundRobinPool(kafkaProtocol.getNumProducers())
+                                .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
+                        "kafkaProducerRouter-" + coreComponents.toString());
                 kafkaProtocol.setProducerRouter(producerRouter);
             }
         }
 
         public Function1<Session, Session> onStart() {
+            kafkaProtocol.getRequestStore().startTimeoutMonitoring(new io.github.kbdering.kafka.cache.TimeoutHandler() {
+                @Override
+                public void onTimeout(String correlationId, Map<String, Object> requestData) {
+                    long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
+                    long endTime = System.currentTimeMillis();
+                    String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
+                    String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
+
+                    coreComponents.statsEngine().logResponse(
+                            scenarioName,
+                            scala.collection.immutable.List$.MODULE$.empty(),
+                            transactionName,
+                            startTime,
+                            endTime,
+                            io.gatling.commons.stats.Status.apply("KO"),
+                            scala.Option.apply("504"),
+                            scala.Option.apply("Request timed out"));
+                }
+            });
             return session -> session;
         }
 
         public Function1<Session, BoxedUnit> onExit() {
-            return session -> BoxedUnit.UNIT;
+            return session -> {
+                kafkaProtocol.getRequestStore().stopTimeoutMonitoring();
+                return BoxedUnit.UNIT;
+            };
         }
 
         public Protocol protocol() {
@@ -192,7 +244,8 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             }
 
             public KafkaProtocol defaultProtocolValue(GatlingConfiguration configuration) {
-                return new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-gatling-group").build();
+                return new KafkaProtocolBuilder().bootstrapServers("localhost:9092").groupId("default-gatling-group")
+                        .build();
             }
 
             public Function1<KafkaProtocol, KafkaProtocolComponents> newComponents(CoreComponents coreComponents) {
@@ -215,11 +268,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
         producerProperties.putIfAbsent(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         producerProperties.putIfAbsent(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+        producerProperties.putIfAbsent(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                ByteArraySerializer.class.getName());
 
         consumerProperties.putIfAbsent(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        consumerProperties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+        consumerProperties.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                StringDeserializer.class.getName());
+        consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                ByteArrayDeserializer.class.getName());
         consumerProperties.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         consumerProperties.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
@@ -230,7 +286,8 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 actorSystem,
                 numProducers,
                 numConsumers,
-                requestStore
-        );
+                requestStore,
+                correlationExtractor,
+                pollTimeout);
     }
 }
