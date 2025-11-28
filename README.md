@@ -132,6 +132,8 @@ import static io.github.kbdering.kafka.javaapi.KafkaDsl.*;
 ### Fire and Forget
 For maximum throughput where you don't need delivery guarantees or response tracking, use "Fire and Forget".
 
+**Note:** In this mode, requests are **NOT** persisted to the Request Store (Redis/Postgres). This means you cannot track response times or verify replies for these messages.
+
 ```java
 .exec(
     kafka("Fire Event", "events_topic", "key", "value", 
@@ -253,6 +255,87 @@ KafkaProtocolBuilder protocol = kafka()
     .consumerProperties(Map.of(
         ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest"
     ));
+```
+
+## Effective Assertions & Extraction
+
+Validating that your system returns the *correct* data is just as important as measuring how fast it is. This section provides examples of how to verify response content.
+
+### 1. Basic String Assertions
+If your messages are simple strings (e.g., JSON or XML as text), you can use basic string manipulation.
+
+```java
+List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
+    "Content Check",
+    String.class, SerializationType.STRING,
+    String.class, SerializationType.STRING,
+    (req, res) -> {
+        // Example 1: Check for a specific substring
+        if (!res.contains("\"status\":\"success\"")) {
+            return Optional.of("Response missing success status");
+        }
+        
+        // Example 2: Check response length
+        if (res.length() < 10) {
+            return Optional.of("Response too short");
+        }
+
+        return Optional.empty(); // Success
+    }
+));
+```
+
+### 2. JSON Extraction & Validation
+For JSON responses, it's best to parse the string to avoid fragile text matching. You can use libraries like Jackson or Gson (add them to your dependencies).
+
+```java
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+// ...
+
+ObjectMapper mapper = new ObjectMapper();
+
+List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
+    "JSON Logic Check",
+    String.class, SerializationType.STRING,
+    String.class, SerializationType.STRING,
+    (req, res) -> {
+        try {
+            JsonNode root = mapper.readTree(res);
+            
+            // Check a specific field value
+            int userId = root.path("user").path("id").asInt();
+            if (userId <= 0) {
+                return Optional.of("Invalid User ID: " + userId);
+            }
+            
+            // Check array size
+            if (root.path("items").size() < 1) {
+                return Optional.of("Items array is empty");
+            }
+            
+            return Optional.empty();
+        } catch (Exception e) {
+            return Optional.of("Failed to parse JSON: " + e.getMessage());
+        }
+    }
+));
+```
+
+### 3. Extracting Values for Correlation
+Sometimes you need to extract a value from the response to use in a subsequent request (though standard Request-Reply handles the correlation ID automatically).
+
+If you need to extract a value from a JSON response body to correlate (instead of using headers), use the `JsonPathExtractor`:
+
+```java
+// Configure the protocol to look for the correlation ID in the JSON body
+KafkaProtocolBuilder protocol = kafka()
+    .correlationExtractor(
+        // Extract the value at path $.meta.correlationId
+        new JsonPathExtractor("$.meta.correlationId") 
+    )
+    // ... other config
 ```
 
 ## Handling In-Flight Requests at Test End
