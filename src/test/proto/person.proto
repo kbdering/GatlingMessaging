@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package io.github.kbdering.kafka.protobuf;
+
+option java_multiple_files = true;
+option java_package = "io.github.kbdering.kafka.protobuf";
+option java_outer_classname = "PersonProto";
+
+message Person {
+  string name = 1;
+  int32 id = 2;
+  string email = 3;
+}

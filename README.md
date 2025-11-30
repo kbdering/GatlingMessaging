@@ -439,6 +439,94 @@ KafkaProtocolBuilder protocol = kafka()
         new JsonPathExtractor("$.meta.correlationId") 
     )
     // ... other config
+    .correlationExtractor(
+        // Extract the value at path $.meta.correlationId
+        new JsonPathExtractor("$.meta.correlationId") 
+    );
+```
+
+## Schema Registry Support (Avro & Protobuf)
+
+The extension supports Avro and Protobuf serialization, integrated with Confluent Schema Registry.
+
+### Dependencies
+
+Add the following dependencies to your `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>io.confluent</groupId>
+    <artifactId>kafka-avro-serializer</artifactId>
+    <version>7.6.0</version>
+</dependency>
+<dependency>
+    <groupId>io.confluent</groupId>
+    <artifactId>kafka-protobuf-serializer</artifactId>
+    <version>7.6.0</version>
+</dependency>
+```
+
+Ensure you have the Confluent repository configured:
+
+```xml
+<repositories>
+    <repository>
+        <id>confluent</id>
+        <url>https://packages.confluent.io/maven/</url>
+    </repository>
+</repositories>
+```
+
+### Avro Example
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .producerProperties(Map.of(
+        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName(),
+        "schema.registry.url", "http://localhost:8081"
+    ))
+    .consumerProperties(Map.of(
+        ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class.getName(),
+        "schema.registry.url", "http://localhost:8081",
+        "specific.avro.reader", "true" // If using specific Avro classes
+    ));
+
+// In your scenario
+.exec(
+    kafkaRequestReply("avro-req", "avro-res",
+        session -> "key",
+        session -> new User("Alice", 30), // Specific Avro Record
+        SerializationType.AVRO, // Or BYTE_ARRAY if serializer handles it
+        checks,
+        10, TimeUnit.SECONDS)
+)
+```
+
+### Protobuf Example
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .producerProperties(Map.of(
+        ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaProtobufSerializer.class.getName(),
+        "schema.registry.url", "http://localhost:8081"
+    ))
+    .consumerProperties(Map.of(
+        ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaProtobufDeserializer.class.getName(),
+        "schema.registry.url", "http://localhost:8081",
+        "specific.protobuf.value.type", Person.class.getName() // Required for specific type
+    ));
+
+// In your scenario
+.exec(
+    kafkaRequestReply("proto-req", "proto-res",
+        session -> "key",
+        session -> Person.newBuilder().setName("Bob").build(),
+        SerializationType.PROTOBUF,
+        checks,
+        10, TimeUnit.SECONDS)
+)
 ```
 
 ## Handling In-Flight Requests at Test End
