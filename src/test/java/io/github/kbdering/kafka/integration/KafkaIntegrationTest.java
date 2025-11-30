@@ -94,8 +94,9 @@ public class KafkaIntegrationTest {
         ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps));
 
         // 3. Send message to Request Topic
-        producerActor.tell(new KafkaProducerActor.ProduceMessage(requestTopic, key, value.getBytes(), correlationId),
-                probe.getRef());
+        KafkaProducerActor.ProduceMessage msg2 = new KafkaProducerActor.ProduceMessage(requestTopic, key,
+                value.getBytes(), correlationId, true);
+        producerActor.tell(msg2, probe.getRef());
 
         // 4. Simulate Application Under Test: Produce response to Response Topic
         try (org.apache.kafka.clients.producer.KafkaProducer<String, byte[]> appProducer = new org.apache.kafka.clients.producer.KafkaProducer<>(

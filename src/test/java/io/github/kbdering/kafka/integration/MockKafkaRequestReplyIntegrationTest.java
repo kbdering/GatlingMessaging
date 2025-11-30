@@ -92,7 +92,7 @@ public class MockKafkaRequestReplyIntegrationTest {
         // 1. Create producer actor and send request
         ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer));
         producerActor.tell(
-                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId),
+                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, true),
                 probe.getRef());
 
         Thread.sleep(100); // Give actor time to process
@@ -139,7 +139,7 @@ public class MockKafkaRequestReplyIntegrationTest {
         for (String corrId : correlationIds) {
             producerActor.tell(
                     new KafkaProducerActor.ProduceMessage("request-topic", "key-" + corrId,
-                            ("value-" + corrId).getBytes(), corrId),
+                            ("value-" + corrId).getBytes(), corrId, true),
                     probe.getRef());
             requestStore.storeRequest(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
                     SerializationType.STRING, "Req-" + corrId, "Scenario", System.currentTimeMillis(), 30000);

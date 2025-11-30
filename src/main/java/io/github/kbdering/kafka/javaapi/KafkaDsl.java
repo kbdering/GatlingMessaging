@@ -39,8 +39,8 @@ public class KafkaDsl {
          */
         public static KafkaActionBuilder kafka(String topic, String key, String value) {
                 return new KafkaActionBuilder(null, topic,
-                                (Function<Session, String>) Expressions.toStringExpression(key),
-                                (Function<Session, String>) Expressions.toStringExpression(value), null);
+                                toJavaFunction(key),
+                                toJavaFunction(value), null);
         }
 
         /**
@@ -55,8 +55,8 @@ public class KafkaDsl {
          */
         public static KafkaActionBuilder kafka(String requestName, String topic, String key, String value) {
                 return new KafkaActionBuilder(requestName, topic,
-                                (Function<Session, String>) Expressions.toStringExpression(key),
-                                (Function<Session, String>) Expressions.toStringExpression(value), null);
+                                toJavaFunction(key),
+                                toJavaFunction(value), null);
         }
 
         /**
@@ -77,8 +77,8 @@ public class KafkaDsl {
         public static KafkaActionBuilder kafka(String topic, String key, String value, boolean waitForAck, long timeout,
                         TimeUnit timeUnit) {
                 return new KafkaActionBuilder(null, topic,
-                                (Function<Session, String>) Expressions.toStringExpression(key),
-                                (Function<Session, String>) Expressions.toStringExpression(value), null, waitForAck,
+                                toJavaFunction(key),
+                                toJavaFunction(value), null, waitForAck,
                                 timeout, timeUnit);
         }
 
@@ -99,8 +99,8 @@ public class KafkaDsl {
         public static KafkaActionBuilder kafka(String requestName, String topic, String key, String value,
                         boolean waitForAck, long timeout, TimeUnit timeUnit) {
                 return new KafkaActionBuilder(requestName, topic,
-                                (Function<Session, String>) Expressions.toStringExpression(key),
-                                (Function<Session, String>) Expressions.toStringExpression(value), null, waitForAck,
+                                toJavaFunction(key),
+                                toJavaFunction(value), null, waitForAck,
                                 timeout, timeUnit);
         }
 
@@ -195,9 +195,7 @@ public class KafkaDsl {
                         String valueExpression, // Gatling EL for string value
                         Protocol protocol,
                         long timeout, TimeUnit timeUnit) {
-                @SuppressWarnings("unchecked")
-                Function<Session, String> stringValueFunction = (Function<Session, String>) Expressions
-                                .toStringExpression(valueExpression);
+                Function<Session, String> stringValueFunction = toJavaFunction(valueExpression);
                 Function<Session, Object> byteValueFunction = session -> stringValueFunction.apply(session)
                                 .getBytes(StandardCharsets.UTF_8);
                 return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
@@ -235,14 +233,33 @@ public class KafkaDsl {
 
         // New methods with requestName support
 
+        private static Function<Session, String> toJavaFunction(String expression) {
+                scala.Function1<io.gatling.core.session.Session, io.gatling.commons.validation.Validation<String>> scalaExpr = Expressions
+                                .toStringExpression(expression);
+
+                return javaSession -> {
+                        io.gatling.core.session.Session scalaSession = javaSession.asScala();
+                        io.gatling.commons.validation.Validation<String> result = scalaExpr.apply(scalaSession);
+                        if (result instanceof io.gatling.commons.validation.Success) {
+                                return ((io.gatling.commons.validation.Success<String>) result).value();
+                        } else {
+                                Object failure = result;
+                                if (failure instanceof io.gatling.commons.validation.Failure) {
+                                        throw new RuntimeException(
+                                                        ((io.gatling.commons.validation.Failure) failure).message());
+                                }
+                                throw new RuntimeException("Expression resolution failed: " + result);
+                        }
+                };
+        }
+
         public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         String valueExpression, // Gatling EL for string value
                         Protocol protocol,
                         long timeout, TimeUnit timeUnit) {
-                Function<Session, String> stringValueFunction = (Function<Session, String>) Expressions
-                                .toStringExpression(valueExpression);
+                Function<Session, String> stringValueFunction = toJavaFunction(valueExpression);
                 Function<Session, Object> byteValueFunction = session -> stringValueFunction.apply(session)
                                 .getBytes(StandardCharsets.UTF_8);
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
@@ -290,5 +307,14 @@ public class KafkaDsl {
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
                                 valueFunction,
                                 requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
+        }
+
+        public static io.github.kbdering.kafka.actions.KafkaConsumeActionBuilder consume(String topic) {
+                return new io.github.kbdering.kafka.actions.KafkaConsumeActionBuilder(null, topic);
+        }
+
+        public static io.github.kbdering.kafka.actions.KafkaConsumeActionBuilder consume(String requestName,
+                        String topic) {
+                return new io.github.kbdering.kafka.actions.KafkaConsumeActionBuilder(requestName, topic);
         }
 }

@@ -169,7 +169,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                 session.scenario(), startTime, timeUnit.toMillis(timeout));
 
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
-                topic, resolvedKey, valueObj, correlationId);
+                topic, resolvedKey, valueObj, correlationId, waitForAck);
 
         ActorRef producerRouter = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getProducerRouter();
 
