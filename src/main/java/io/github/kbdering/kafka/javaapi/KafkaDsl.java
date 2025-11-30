@@ -17,12 +17,76 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+/**
+ * Main DSL entry point for the Gatling Kafka extension.
+ * 
+ * <p>
+ * This class provides a fluent API for creating Kafka-based load test scenarios
+ * in Gatling.
+ * It supports both fire-and-forget message sending and request-reply patterns
+ * with correlation.
+ * 
+ * <h2>Usage Examples:</h2>
+ * 
+ * <h3>Simple Message Send:</h3>
+ * 
+ * <pre>{@code
+ * exec(kafka("my-topic", "key", "value"))
+ * }</pre>
+ * 
+ * <h3>Request-Reply Pattern:</h3>
+ * 
+ * <pre>{@code
+ * exec(kafkaRequestReply("request-topic", "response-topic",
+ *                 session -> "myKey",
+ *                 session -> "myValue",
+ *                 SerializationType.STRING,
+ *                 checks,
+ *                 10, TimeUnit.SECONDS))
+ * }</pre>
+ * 
+ * @author Jakub Dering
+ * @see KafkaProtocolBuilder
+ * @see KafkaActionBuilder
+ * @see KafkaRequestReplyActionBuilder
+ */
 public class KafkaDsl {
 
+        /**
+         * Creates a new Kafka protocol builder.
+         * 
+         * <p>
+         * This is the starting point for configuring Kafka protocol settings such as
+         * bootstrap servers, number of producers/consumers, and request stores.
+         * 
+         * @return a new {@link KafkaProtocolBuilder} instance
+         */
         public static KafkaProtocolBuilder kafka() {
                 return new KafkaProtocolBuilder();
         }
 
+        /**
+         * Creates a correlation extractor that uses JSONPath to extract correlation IDs
+         * from message bodies.
+         * 
+         * <p>
+         * This is useful when the correlation ID is not in the message headers but
+         * embedded
+         * within a JSON message body.
+         * 
+         * <h3>Example:</h3>
+         * 
+         * <pre>{@code
+         * KafkaProtocolBuilder protocol = kafka()
+         *                 .correlationExtractor(jsonPath("$.metadata.correlationId"))
+         *                 .bootstrapServers("localhost:9092");
+         * }</pre>
+         * 
+         * @param path the JSONPath expression to extract the correlation ID (e.g.,
+         *             "$.id" or "$.meta.correlationId")
+         * @return a {@link CorrelationExtractor} that uses JSONPath
+         * @see JsonPathExtractor
+         */
         public static CorrelationExtractor jsonPath(String path) {
                 return new JsonPathExtractor(path);
         }
