@@ -9,7 +9,7 @@ import redis.clients.jedis.JedisPool;
 
 import java.util.Map;
 
-@Ignore("Docker API compatibility issue. Install Testcontainers Desktop (https://testcontainers.com/desktop/) to run locally.")
+// @Ignore("Docker API compatibility issue. Install Testcontainers Desktop (https://testcontainers.com/desktop/) to run locally.")
 public class RedisIntegrationTest {
 
     private static final DockerImageName REDIS_IMAGE = DockerImageName.parse("redis:7-alpine");

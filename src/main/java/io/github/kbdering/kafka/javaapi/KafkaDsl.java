@@ -202,7 +202,7 @@ public class KafkaDsl {
                                 .getBytes(StandardCharsets.UTF_8);
                 return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
                                 responseTopic, keyFunction, byteValueFunction,
-                                SerializationType.STRING, protocol, Collections.emptyList(), timeout, timeUnit);
+                                SerializationType.STRING, protocol, Collections.emptyList(), true, timeout, timeUnit);
         }
 
         // Recommended: Overloaded method without the Protocol parameter
@@ -216,7 +216,7 @@ public class KafkaDsl {
                 // context.
                 return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
                                 responseTopic, keyFunction, valueFunction,
-                                requestSerializationType, null, messageChecks, timeout, timeUnit);
+                                requestSerializationType, null, messageChecks, true, timeout, timeUnit);
         }
 
         // New comprehensive method for byte[] value, explicit SerializationType, and
@@ -230,7 +230,7 @@ public class KafkaDsl {
                         long timeout, TimeUnit timeUnit) {
                 return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
                                 responseTopic, keyFunction, valueFunction,
-                                requestSerializationType, protocol, messageChecks, timeout, timeUnit);
+                                requestSerializationType, protocol, messageChecks, true, timeout, timeUnit);
         }
 
         // New methods with requestName support
@@ -247,7 +247,7 @@ public class KafkaDsl {
                                 .getBytes(StandardCharsets.UTF_8);
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
                                 byteValueFunction,
-                                SerializationType.STRING, protocol, Collections.emptyList(), timeout, timeUnit);
+                                SerializationType.STRING, protocol, Collections.emptyList(), true, timeout, timeUnit);
         }
 
         public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
@@ -261,7 +261,7 @@ public class KafkaDsl {
                 // context.
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
                                 valueFunction,
-                                requestSerializationType, null, messageChecks, timeout, timeUnit);
+                                requestSerializationType, null, messageChecks, true, timeout, timeUnit);
         }
 
         public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
@@ -274,6 +274,21 @@ public class KafkaDsl {
                         long timeout, TimeUnit timeUnit) {
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
                                 valueFunction,
-                                requestSerializationType, protocol, messageChecks, timeout, timeUnit);
+                                requestSerializationType, protocol, messageChecks, true, timeout, timeUnit);
+        }
+
+        // Overloads with waitForAck
+
+        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+                        String responseTopic,
+                        Function<Session, String> keyFunction,
+                        Function<Session, Object> valueFunction,
+                        SerializationType requestSerializationType,
+                        List<MessageCheck<?, ?>> messageChecks,
+                        boolean waitForAck,
+                        long timeout, TimeUnit timeUnit) {
+                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
+                                valueFunction,
+                                requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
         }
 }

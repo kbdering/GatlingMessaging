@@ -2,3 +2,4 @@
 jmeter.log
 /target/*
 *.hprof
+java_pid*
