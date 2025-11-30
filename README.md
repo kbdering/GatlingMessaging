@@ -142,6 +142,25 @@ For maximum throughput where you don't need delivery guarantees or response trac
 )
 ```
 
+### Raw Consumer (Consume Only)
+Sometimes you need to consume messages from a topic without sending a request first (e.g., verifying a side-effect of another action).
+
+You can use the `consume` action to read a message from a topic and save it to the session for validation.
+
+```java
+.exec(
+    KafkaDsl.consume("Consume Event", "my_topic")
+        .saveAs("myMessage") // Save the message value to session
+)
+.exec(session -> {
+    String message = session.getString("myMessage");
+    if (!"expected_value".equals(message)) {
+        throw new RuntimeException("Unexpected message: " + message);
+    }
+    return session;
+})
+```
+
 ## Request-Reply Pattern
 
 This is the core feature of the extension. It allows you to test systems that consume a message, process it, and send a reply to another topic.

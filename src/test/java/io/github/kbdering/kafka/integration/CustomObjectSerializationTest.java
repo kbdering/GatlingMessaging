@@ -33,18 +33,33 @@ public class CustomObjectSerializationTest {
 
     static class MyObject {
         public String name;
-        public int value;
+        public int id;
 
-        public MyObject(String name, int value) {
+        public MyObject(String name, int id) {
             this.name = name;
-            this.value = value;
+            this.id = id;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+            MyObject myObject = (MyObject) o;
+            return id == myObject.id && java.util.Objects.equals(name, myObject.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(name, id);
         }
     }
 
     static class MyObjectSerializer implements Serializer<MyObject> {
         @Override
         public byte[] serialize(String topic, MyObject data) {
-            return (data.name + ":" + data.value).getBytes(StandardCharsets.UTF_8);
+            return (data.name + ":" + data.id).getBytes(StandardCharsets.UTF_8);
         }
     }
 
@@ -63,7 +78,8 @@ public class CustomObjectSerializationTest {
                 MyObject message = new MyObject("test", 123);
                 String correlationId = "corr-custom";
 
-                actorRef.tell(new KafkaProducerActor.ProduceMessage(topic, key, message, correlationId), getRef());
+                actorRef.tell(new KafkaProducerActor.ProduceMessage("request-topic", "key",
+                        message, "correlationId", true), getRef());
 
                 // Verify actor sent back metadata
                 expectMsgClass(org.apache.kafka.clients.producer.RecordMetadata.class);

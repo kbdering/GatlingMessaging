@@ -1,12 +1,12 @@
 package io.github.kbdering.kafka.cache;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.Executors;
@@ -22,19 +22,32 @@ public class InMemoryRequestStore implements RequestStore {
 
     private static final Logger logger = LoggerFactory.getLogger(InMemoryRequestStore.class);
     private final ConcurrentHashMap<String, Map<String, Object>> cache = new ConcurrentHashMap<>();
-    // Sorted map: timeout timestamp -> set of correlation IDs that timeout at that
-    // time
-    private final ConcurrentSkipListMap<Long, Set<String>> timeoutsByTime;
-    // Quick lookup: correlation ID -> timeout timestamp
-    private final Map<String, Long> correlationToTimeout;
+
+    // Map of Timeout Duration -> Queue of Timeout Entries
+    private final ConcurrentSkipListMap<Long, ConcurrentLinkedDeque<TimeoutEntry>> timeoutBuckets;
+
+    // Helper class to track timeout entries
+    private static class TimeoutEntry {
+        final String correlationId;
+        final long expirationTime;
+
+        TimeoutEntry(String correlationId, long expirationTime) {
+            this.correlationId = correlationId;
+            this.expirationTime = expirationTime;
+        }
+    }
+
     private ScheduledExecutorService timeoutExecutor;
     private TimeoutHandler timeoutHandler;
-    private final AtomicBoolean monitoringActive = new AtomicBoolean(false);
+    private final long timeoutCheckIntervalMillis;
 
     public InMemoryRequestStore() {
-        // cache initialized inline
-        timeoutsByTime = new ConcurrentSkipListMap<>();
-        correlationToTimeout = new ConcurrentHashMap<>();
+        this(5000);
+    }
+
+    public InMemoryRequestStore(long timeoutCheckIntervalMillis) {
+        this.timeoutCheckIntervalMillis = timeoutCheckIntervalMillis;
+        this.timeoutBuckets = new ConcurrentSkipListMap<>();
     }
 
     @Override
@@ -57,12 +70,11 @@ public class InMemoryRequestStore implements RequestStore {
 
         // Store timeout information if timeout is specified
         if (timeoutMillis > 0) {
-            long timeoutTimestamp = startTime + timeoutMillis;
-            correlationToTimeout.put(correlationId, timeoutTimestamp);
+            long expirationTime = startTime + timeoutMillis;
 
-            // Add to sorted timeout structure
-            timeoutsByTime.computeIfAbsent(timeoutTimestamp, k -> new ConcurrentSkipListSet<>())
-                    .add(correlationId);
+            // Add to the bucket for this specific timeout duration
+            timeoutBuckets.computeIfAbsent(timeoutMillis, k -> new ConcurrentLinkedDeque<>())
+                    .add(new TimeoutEntry(correlationId, expirationTime));
         }
     }
 
@@ -87,100 +99,89 @@ public class InMemoryRequestStore implements RequestStore {
         return foundRequests;
     }
 
-    @Override
-    public void deleteRequest(String correlationId) {
-        cache.remove(correlationId);
-
-        // Remove from timeout tracking
-        Long timeoutTimestamp = correlationToTimeout.remove(correlationId);
-        if (timeoutTimestamp != null) {
-            Set<String> timeoutSet = timeoutsByTime.get(timeoutTimestamp);
-            if (timeoutSet != null) {
-                timeoutSet.remove(correlationId);
-                // Clean up empty timeout buckets
-                if (timeoutSet.isEmpty()) {
-                    timeoutsByTime.remove(timeoutTimestamp);
-                }
-            }
-        }
+    // Not an override from RequestStore, but used internally and by tests
+    public Map<String, Object> remove(String correlationId) {
+        // Lazy removal: we only remove from cache.
+        // The timeout entry will be cleaned up when it expires and we check the cache.
+        return cache.remove(correlationId);
     }
 
     @Override
-    public void startTimeoutMonitoring(TimeoutHandler timeoutHandler) {
-        this.timeoutHandler = timeoutHandler;
-        if (monitoringActive.compareAndSet(false, true)) {
+    public void deleteRequest(String correlationId) {
+        remove(correlationId);
+    }
+
+    @Override
+    public void startTimeoutMonitoring(TimeoutHandler handler) {
+        this.timeoutHandler = handler;
+        if (timeoutExecutor == null || timeoutExecutor.isShutdown()) {
             timeoutExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "InMemoryRequestStore-TimeoutMonitor");
+                Thread t = new Thread(r, "TimeoutMonitor");
                 t.setDaemon(true);
                 return t;
             });
-            // Check for timeouts every 5 seconds
-            timeoutExecutor.scheduleWithFixedDelay(this::processTimeouts, 5, 5, TimeUnit.SECONDS);
+            timeoutExecutor.scheduleAtFixedRate(this::processTimeouts, timeoutCheckIntervalMillis,
+                    timeoutCheckIntervalMillis, TimeUnit.MILLISECONDS);
         }
     }
 
     @Override
     public void stopTimeoutMonitoring() {
-        if (monitoringActive.compareAndSet(true, false)) {
-            if (timeoutExecutor != null) {
-                timeoutExecutor.shutdown();
-                try {
-                    if (!timeoutExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        timeoutExecutor.shutdownNow();
-                    }
-                } catch (InterruptedException e) {
+        if (timeoutExecutor != null) {
+            timeoutExecutor.shutdown();
+            try {
+                if (!timeoutExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
                     timeoutExecutor.shutdownNow();
-                    Thread.currentThread().interrupt();
                 }
-                timeoutExecutor = null;
+            } catch (InterruptedException e) {
+                timeoutExecutor.shutdownNow();
             }
         }
-        this.timeoutHandler = null;
     }
 
     @Override
     public void processTimeouts() {
-        if (timeoutHandler == null) {
-            return;
-        }
-
-        long currentTime = System.currentTimeMillis();
-
-        // Get all timeout timestamps that have expired (O(log n) operation)
-        Map<Long, Set<String>> expiredTimeouts = timeoutsByTime.headMap(currentTime, true);
-
-        if (expiredTimeouts.isEmpty()) {
-            return;
-        }
-
-        // Process all expired timeouts
-        List<Long> timestampsToRemove = new ArrayList<>();
-
-        for (Map.Entry<Long, Set<String>> entry : expiredTimeouts.entrySet()) {
-            Long timeoutTimestamp = entry.getKey();
-            Set<String> correlationIds = entry.getValue();
-
-            // Process each correlation ID in this timeout bucket
-            for (String correlationId : correlationIds) {
-                Map<String, Object> requestData = cache.remove(correlationId);
-                correlationToTimeout.remove(correlationId);
-
-                if (requestData != null) {
-                    try {
-                        timeoutHandler.onTimeout(correlationId, requestData);
-                    } catch (Exception e) {
-                        logger.error("Error processing timeout for correlationId {}: {}", correlationId,
-                                e.getMessage());
-                    }
-                }
+        try {
+            if (timeoutHandler == null) {
+                return;
             }
 
-            timestampsToRemove.add(timeoutTimestamp);
-        }
+            long currentTime = System.currentTimeMillis();
 
-        // Clean up processed timeout buckets
-        for (Long timestamp : timestampsToRemove) {
-            timeoutsByTime.remove(timestamp);
+            // Iterate over all timeout buckets (durations)
+            for (Map.Entry<Long, ConcurrentLinkedDeque<TimeoutEntry>> entry : timeoutBuckets.entrySet()) {
+                ConcurrentLinkedDeque<TimeoutEntry> queue = entry.getValue();
+
+                // Process the queue for this duration
+                while (true) {
+                    TimeoutEntry head = queue.peek();
+
+                    // If queue is empty or head has not expired, stop processing this bucket
+                    if (head == null || head.expirationTime > currentTime) {
+                        break;
+                    }
+
+                    // Remove the expired entry from the queue
+                    queue.poll();
+
+                    // Check if the request is still active (lazy removal check)
+                    Map<String, Object> requestData = cache.remove(head.correlationId);
+
+                    if (requestData != null) {
+                        // Request was still in cache, so it's a real timeout
+                        try {
+                            timeoutHandler.onTimeout(head.correlationId, requestData);
+                        } catch (Exception e) {
+                            logger.error("Error processing timeout for correlationId {}: {}", head.correlationId,
+                                    e.getMessage());
+                        }
+                    }
+                    // If requestData is null, it means the response was already received and
+                    // removed from cache
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error in processTimeouts", e);
         }
     }
 

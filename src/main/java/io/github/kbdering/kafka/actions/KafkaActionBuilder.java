@@ -174,7 +174,7 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         String correlationId = resolvedKey != null ? resolvedKey : java.util.UUID.randomUUID().toString();
 
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
-                topic, resolvedKey, valueBytes, correlationId);
+                topic, resolvedKey, valueBytes, correlationId, waitForAck);
 
         long startTime = coreComponents.clock().nowMillis();
 

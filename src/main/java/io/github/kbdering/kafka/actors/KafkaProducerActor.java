@@ -18,14 +18,16 @@ public class KafkaProducerActor extends AbstractActor {
     public static class ProduceMessage {
         public final String topic;
         public final String key;
-        public final Object value; // Changed to Object
+        public final Object value;
         public final String correlationId;
+        public final boolean waitForAck;
 
-        public ProduceMessage(String topic, String key, Object value, String correlationId) {
+        public ProduceMessage(String topic, String key, Object value, String correlationId, boolean waitForAck) {
             this.topic = topic;
             this.key = key;
             this.value = value;
             this.correlationId = correlationId;
+            this.waitForAck = waitForAck;
         }
     }
 
@@ -55,20 +57,41 @@ public class KafkaProducerActor extends AbstractActor {
     }
 
     private void handleProduceMessage(ProduceMessage message) {
-        logger.info("Received ProduceMessage: topic={}, key={}, value={}", message.topic, message.key, message.value);
+        logger.debug("Received ProduceMessage: topic={}, key={}, value={}, waitForAck={}", message.topic, message.key,
+                message.value, message.waitForAck);
         ProducerRecord<String, Object> record = new ProducerRecord<>(message.topic, message.key, message.value);
-        record.headers().add("correlationId", message.correlationId.getBytes());
+        if (message.correlationId != null) {
+            record.headers().add("correlationId", message.correlationId.getBytes());
+        }
+
         final org.apache.pekko.actor.ActorRef replyTo = getSender();
-        producer.send(record, (metadata, exception) -> {
-            if (exception != null) {
-                replyTo.tell(new org.apache.pekko.actor.Status.Failure(exception), getSelf());
-                if (exception instanceof KafkaException) {
-                    logger.error("Kafka Producer Error", exception);
+
+        if (message.waitForAck) {
+            producer.send(record, (metadata, exception) -> {
+                if (exception != null) {
+                    replyTo.tell(new org.apache.pekko.actor.Status.Failure(exception), getSelf());
+                    if (exception instanceof KafkaException) {
+                        logger.error("Kafka Producer Error", exception);
+                    }
+                } else {
+                    replyTo.tell(metadata, getSelf());
                 }
-            } else {
-                replyTo.tell(metadata, getSelf());
-            }
-        });
+            });
+        } else {
+            // Fire and forget - send immediately and don't wait for callback to reply
+            // We still use a callback to log errors, but we reply to the sender immediately
+            producer.send(record, (metadata, exception) -> {
+                if (exception != null) {
+                    logger.error("Kafka Producer Error (Async)", exception);
+                }
+            });
+            // Reply with a placeholder or null since we don't have metadata yet
+            // Actually, for fire-and-forget, the Action might not even expect a reply,
+            // but keeping the protocol consistent is good.
+            // However, if we reply immediately, we can't send RecordMetadata.
+            // Let's send a success object.
+            replyTo.tell("Message sent (async)", getSelf());
+        }
     }
 
     @Override
