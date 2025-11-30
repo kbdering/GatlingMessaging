@@ -118,7 +118,7 @@
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
-            <version>4.31.1</version>
+            <version>3.21.12</version>
         </dependency>
 
     <dependency>
@@ -136,9 +136,50 @@
         <artifactId>logback-classic</artifactId>
         <version>1.4.14</version>
     </dependency>
+    <dependency>
+        <groupId>io.confluent</groupId>
+        <artifactId>kafka-avro-serializer</artifactId>
+        <version>7.6.0</version>
+    </dependency>
+    <dependency>
+        <groupId>io.confluent</groupId>
+        <artifactId>kafka-protobuf-serializer</artifactId>
+        <version>7.6.0</version>
+    </dependency>
   </dependencies>
+
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
+
     <build>
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
         <plugins>
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protocArtifact>com.google.protobuf:protoc:3.21.7:exe:${os.detected.classifier}</protocArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>test-compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>io.gatling</groupId>
                 <artifactId>gatling-maven-plugin</artifactId>

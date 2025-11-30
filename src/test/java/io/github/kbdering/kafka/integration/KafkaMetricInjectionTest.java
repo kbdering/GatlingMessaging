@@ -1,6 +1,5 @@
 package io.github.kbdering.kafka.integration;
 
-import io.gatling.app.Gatling;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -25,13 +24,12 @@ public class KafkaMetricInjectionTest {
 
     @Test
     public void testMetricInjection() {
+
         String[] args = new String[] {
-                "-s", io.github.kbdering.kafka.simulations.MetricInjectionSimulation.class.getName(),
-                "-rf", "target/gatling",
-                "-rd", "metric-injection-test"
+                "--simulation", io.github.kbdering.kafka.simulations.MetricInjectionSimulation.class.getName(),
+                "--results-folder", "target/gatling"
         };
         // Use fromArgs to avoid System.exit
-        int exitCode = io.gatling.app.Gatling$.MODULE$.fromArgs(args);
-        // Assert exitCode if needed, e.g., Assert.assertEquals(0, exitCode);
+        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
     }
 }

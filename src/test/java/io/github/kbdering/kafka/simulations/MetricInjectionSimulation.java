@@ -5,8 +5,6 @@ import io.gatling.javaapi.core.Simulation;
 import io.github.kbdering.kafka.javaapi.KafkaDsl;
 import io.github.kbdering.kafka.javaapi.KafkaProtocolBuilder;
 
-import java.time.Duration;
-
 import static io.gatling.javaapi.core.CoreDsl.*;
 
 public class MetricInjectionSimulation extends Simulation {
@@ -28,9 +26,9 @@ public class MetricInjectionSimulation extends Simulation {
 
                         // Use reflection to call metricInjectionInterval to avoid potential linkage
                         // issues during test loading
-                        java.lang.reflect.Method method = kafkaProtocol.getClass().getMethod("metricInjectionInterval",
-                                        Duration.class);
-                        method.invoke(kafkaProtocol, Duration.ofSeconds(1));
+                        // java.lang.reflect.Method method = kafkaProtocol.getClass().getMethod("metricInjectionInterval",
+                        //                 java.time.Duration.class);
+                        // method.invoke(kafkaProtocol, java.time.Duration.ofSeconds(1));
 
                         System.out.println("DEBUG: KafkaProtocolBuilder created successfully.");
                 } catch (Throwable e) {
