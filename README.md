@@ -638,6 +638,343 @@ setUp(scn.injectOpen(atOnceUsers(1)))
 *   `kafka-producer-request-latency-avg`
 *   `kafka-consumer-fetch-latency-avg`
 
+---
+
+## 🔥 Resilience & Chaos Testing
+
+One of the most powerful features of this extension is its ability to **measure the true impact of failures** on your event-driven architecture. Unlike simple throughput tests, this framework tracks end-to-end latency and data integrity during outages, giving you real insight into user experience during incidents.
+
+### Why Traditional Load Tests Miss Failures
+
+Most Kafka load tests only measure "happy path" performance:
+- ✅ How many messages per second?
+- ✅ What's the average latency?
+- ❌ **What happens when a broker dies?**
+- ❌ **How long does recovery take?**
+- ❌ **Are any messages lost or corrupted?**
+
+This framework answers those critical questions.
+
+### Key Capabilities for Resilience Testing
+
+1. **Persistent Request Tracking**: Using Redis/PostgreSQL, requests survive application crashes and restarts
+2. **Timeout Detection**: Automatically detects and reports requests that never complete due to application failures
+3. **End-to-End Measurement**: Captures the full impact of failures on user experience, including recovery time
+4. **Data Validation**: Verifies responses are correct, not just "a response arrived"
+
+---
+
+## Chaos Testing Scenarios
+
+### Scenario 1: Broker Outage During Load
+
+**Test Objective**: Measure the impact of a broker failure on end-to-end latency and error rates.
+
+**Setup**:
+```java
+// Configure with durable request store for failure resilience
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("broker1:9092,broker2:9092,broker3:9092")
+    .requestStore(postgresStore) // Survives test disruptions
+    .producerProperties(Map.of(
+        ProducerConfig.ACKS_CONFIG, "all",
+        ProducerConfig.RETRIES_CONFIG, "10",
+        ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "500"
+    ))
+    .consumerProperties(Map.of(
+        "session.timeout.ms", "30000",
+        "heartbeat.interval.ms", "3000"
+    ));
+
+ScenarioBuilder chaosScenario = scenario("Broker Outage Test")
+    .exec(
+        kafkaRequestReply("request-topic", "response-topic",
+            session -> UUID.randomUUID().toString(),
+            session -> generateTestPayload(),
+            SerializationType.STRING,
+            validationChecks,
+            30, TimeUnit.SECONDS)
+    );
+
+setUp(
+    chaosScenario.injectOpen(
+        constantUsersPerSec(50).during(120) // 2 minutes of steady load
+    )
+).protocols(protocol);
+```
+
+**Test Procedure**:
+1. Start the test (50 requests/sec baseline)
+2. **At T+30s**: Kill a broker (e.g., `docker stop kafka-broker-2`)
+3. **Observe**: Latency spikes as clients reconnect, some requests may time out
+4. **At T+60s**: Restart the broker (`docker start kafka-broker-2`)
+5. **Observe**: Recovery time, pending requests completing
+
+**What to Measure**:
+- **Latency Spike**: How high does P95/P99 latency go during the outage?
+- **Error Rate**: What percentage of requests fail or timeout?
+- **Recovery Time**: How long until latency returns to baseline?
+- **Data Integrity**: Do all successful responses still pass validation?
+
+**Expected Results** (healthy system):
+- Brief latency spike (5-15 seconds) during metadata refresh
+- No data corruption (all checks pass)
+- Automatic recovery when broker returns
+
+---
+
+### Scenario 2: Consumer Group Rebalancing
+
+**Test Objective**: Measure the impact of application deployment (rolling restart) on request-reply latency.
+
+**Setup**:
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .requestStore(redisStore) // Track requests during app restart
+    .numConsumers(4) // Match your application's consumer count
+    .pollTimeout(Duration.ofSeconds(1));
+
+ScenarioBuilder rebalanceScenario = scenario("Consumer Rebalance Test")
+    .forever()
+    .exec(
+        kafkaRequestReply("orders-in", "orders-out",
+            session -> "order-" + session.userId(),
+            session -> createOrder(),
+            SerializationType.JSON,
+            orderValidationChecks,
+            45, TimeUnit.SECONDS) // Higher timeout for rebalance
+        .pace(Duration.ofSeconds(1)) // 1 request per second per user
+    );
+
+setUp(
+    rebalanceScenario.injectOpen(
+        rampUsers(20).during(30),
+        constantUsersPerSec(20).during(300), // 5 minutes steady state
+        nothingFor(Duration.ofSeconds(60)) // Cooldown for pending requests
+    )
+).protocols(protocol);
+```
+
+**Test Procedure**:
+1. Start test with 20 concurrent users
+2. **At T+60s**: Restart one application instance (triggers rebalance)
+3. **Observe**: Consumer group pauses, partition reassignment
+4. **At T+120s**: Restart another application instance
+5. **Observe**: Additional rebalance
+6. **At T+180s**: Scale up application (add new instance)
+7. **Observe**: Final rebalance
+
+**What to Measure**:
+- **Rebalance Duration**: How long does the consumer group pause?
+- **Latency Impact**: Do requests queue up and complete later with higher latency?
+- **Timeout Rate**: Do any requests timeout during the rebalance?
+- **Message Loss**: Are all requests eventually processed?
+
+**Gatling Assertions**:
+```java
+.assertions(
+    global().responseTime().percentile3().lt(10000), // P99 < 10s even during rebalance
+    global().successfulRequests().percent().gt(99.0) // 99% success rate
+)
+```
+
+---
+
+### Scenario 3: Partition Leader Election
+
+**Test Objective**: Test behavior when a partition leader fails and a new leader must be elected.
+
+**Setup**:
+```java
+// Target a specific partition for controlled chaos
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .requestStore(postgresStore)
+    .producerProperties(Map.of(
+        ProducerConfig.ACKS_CONFIG, "all", // Requires in-sync replicas
+        ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "1", // Strong ordering
+        ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000"
+    ));
+
+// Use consistent partitioning to target specific partition
+ScenarioBuilder partitionChaos = scenario("Leader Election Test")
+    .exec(
+        kafkaRequestReply("test-topic", "response-topic",
+            session -> "fixed-key-partition-0", // Always partition 0
+            session -> "test-message-" + System.nanoTime(),
+            SerializationType.STRING,
+            checks,
+            20, TimeUnit.SECONDS)
+    );
+```
+
+**Test Procedure**:
+1. Start test targeting partition 0
+2. **Identify leader**: `kafka-topics.sh --describe --topic test-topic`
+3. **Kill leader broker**: Stop the broker hosting partition 0's leader
+4. **Observe**: ISR shrinks, new leader elected from replicas
+5. **Monitor**: Request latency during election (typically 5-30 seconds)
+
+**Advanced Metrics Collection**:
+```java
+// Enable metric injection to track producer retry behavior
+.metricInjectionInterval(Duration.ofMillis(500))
+
+// Assert that retries happen but eventually succeed
+.assertions(
+    details("Kafka Metrics").max("kafka-producer-record-error-rate").lt(0.01),
+    global().successfulRequests().percent().gt(95.0)
+)
+```
+
+---
+
+### Scenario 4: Application Crash and Resume
+
+**Test Objective**: Verify that requests survive application crashes and are correctly measured when the app recovers.
+
+**Key Insight**: This scenario showcases why `PostgresRequestStore` or `RedisRequestStore` is critical for resilience testing.
+
+**Setup**:
+```java
+// Use PostgresRequestStore - survives crashes
+PostgresRequestStore persistentStore = new PostgresRequestStore(
+    dataSource,
+    "requests"
+);
+
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .requestStore(persistentStore)
+    .timeoutCheckInterval(Duration.ofSeconds(5));
+
+ScenarioBuilder crashRecoveryScenario = scenario("Crash Recovery Test")
+    .exec(
+        kafkaRequestReply("crash-test-in", "crash-test-out",
+            session -> UUID.randomUUID().toString(),
+            session -> createComplexTransaction(),
+            SerializationType.PROTOBUF,
+            transactionChecks,
+            120, TimeUnit.SECONDS) // Long timeout for crash recovery
+    );
+```
+
+**Test Procedure**:
+1. **T+0s**: Start test, requests flowing normally
+2. **T+30s**: Force crash your application (`kill -9 <pid>`)
+3. **Observe**: Requests stored in Postgres, waiting for responses
+4. **T+60s**: Restart application
+5. **Observe**: Application processes queued messages, sends responses
+6. **Result**: Framework matches responses to requests, reports **true latency including downtime**
+
+**What This Proves**:
+- **No Silent Failures**: Every request is accounted for
+- **True User Impact**: Latency includes the crash downtime (what users actually experience)
+- **Data Durability**: Request metadata survives crashes
+
+**Sample Results**:
+```
+Request sent at T+25s
+Application crashes at T+30s (request in Postgres)
+Application restarts at T+60s
+Response received at T+65s
+Reported latency: 40 seconds (TRUE user experience)
+```
+
+---
+
+### Scenario 5: Network Partition (Split Brain)
+
+**Test Objective**: Test behavior when Gatling can reach Kafka but the application cannot (or vice versa).
+
+**Setup Using Toxiproxy**:
+```bash
+# Setup Toxiproxy to introduce network failures
+docker run -d --name toxiproxy \
+  -p 8474:8474 -p 9093:9093 \
+  ghcr.io/shopify/toxiproxy
+
+# Create proxy for Kafka broker
+toxiproxy-cli create kafka-proxy \
+  --listen 0.0.0.0:9093 \
+  --upstream kafka:9092
+```
+
+**Gatling Configuration**:
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("toxiproxy:9093") // Through proxy
+    .requestStore(redisStore)
+    .producerProperties(Map.of(
+        ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000",
+        ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "15000"
+    ));
+```
+
+**Test Procedure**:
+1. Start test with normal traffic
+2. **Inject latency**: `toxiproxy-cli toxic add -t latency -a latency=5000 kafka-proxy`
+3. **Observe**: Slow responses, potential timeouts
+4. **Inject packet loss**: `toxiproxy-cli toxic add -t slow_close kafka-proxy`
+5. **Observe**: Connection failures, retry behavior
+
+---
+
+### Best Practices for Chaos Testing
+
+1. **Use Persistent Request Stores**
+   - InMemoryRequestStore: Development only
+   - RedisRequestStore: Most chaos scenarios
+   - PostgresRequestStore: Audit trail needed
+
+2. **Set Realistic Timeouts**
+   - Too short: False failures during recovery
+   - Too long: Hides real problems
+   - Recommendation: 2-3x normal P99 latency
+
+3. **Add Cooldown Periods**
+   ```java
+   nothingFor(Duration.ofSeconds(60)) // Let pending requests complete
+   ```
+
+4. **Monitor Both Sides**
+   - Gatling metrics (client view)
+   - Kafka broker metrics (server view)
+   - Application logs (processing view)
+
+5. **Gradual Chaos Introduction**
+   - Start with one failure type
+   - Baseline performance first
+   - Document expected vs. actual behavior
+
+6. **Automate Chaos Injection**
+   ```java
+   exec(session -> {
+       if (session.userId() % 100 == 0) {
+           // Trigger chaos every 100 iterations
+           Runtime.getRuntime().exec("scripts/kill-random-broker.sh");
+       }
+       return session;
+   })
+   ```
+
+### Sample Test Report Metrics
+
+After chaos testing, you should capture:
+
+| Metric | Baseline | During Failure | Recovery Time |
+|--------|----------|----------------|---------------|
+| **Avg Latency** | 150ms | 8,500ms | 12 seconds |
+| **P99 Latency** | 450ms | 35,000ms | 25 seconds |
+| **Error Rate** | 0.01% | 12% | - |
+| **Throughput** | 500/sec | 180/sec | 45 seconds |
+| **Validation Failures** | 0 | 0 | - |
+
+**Key Finding**: System degraded but **no data corruption** (validation passed for all completed requests).
+
+---
+
 ## 🎓 Tips for Junior Developers
 
 If you are new to Gatling or Kafka, this framework might look a bit intimidating. Here is a guide to help you get started without getting overwhelmed.
