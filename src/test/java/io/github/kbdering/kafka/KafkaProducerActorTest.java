@@ -38,7 +38,8 @@ public class KafkaProducerActorTest {
                 org.apache.kafka.common.serialization.Serializer<Object> valueSerializer = (org.apache.kafka.common.serialization.Serializer<Object>) (org.apache.kafka.common.serialization.Serializer<?>) new StringSerializer();
                 MockProducer<String, Object> producer = new MockProducer<>(true, new StringSerializer(),
                         valueSerializer);
-                ActorRef actorRef = system.actorOf(KafkaProducerActor.props(producer));
+                ActorRef actorRef = system.actorOf(KafkaProducerActor
+                        .props((org.apache.kafka.clients.producer.Producer<String, Object>) producer));
 
                 String topic = "test-topic";
                 String key = "key";
@@ -53,7 +54,7 @@ public class KafkaProducerActorTest {
                     e.printStackTrace();
                 }
                 Object message = "test-message";
-                actorRef.tell(new KafkaProducerActor.ProduceMessage("test-topic", "key", message, correlationId),
+                actorRef.tell(new KafkaProducerActor.ProduceMessage("test-topic", "key", message, correlationId, true),
                         getRef());
 
                 // Verify actor sent back metadata (since auto-complete is true)
@@ -77,14 +78,17 @@ public class KafkaProducerActorTest {
                 MockProducer<String, Object> mockProducer = new MockProducer<>(false, new StringSerializer(),
                         valueSerializer);
                 TestActorRef<KafkaProducerActor> producer = TestActorRef.create(system,
-                        KafkaProducerActor.props(mockProducer));
+                        KafkaProducerActor
+                                .props((org.apache.kafka.clients.producer.Producer<String, Object>) mockProducer));
 
                 String topic = "test-topic";
                 String key = "key";
                 Object value = "value";
                 String correlationId = "corr-1";
 
-                producer.tell(new KafkaProducerActor.ProduceMessage(topic, key, value, correlationId), getRef());
+                KafkaProducerActor.ProduceMessage msg = new KafkaProducerActor.ProduceMessage(topic, key, value,
+                        correlationId, true);
+                producer.tell(msg, getRef());
 
                 try {
                     Thread.sleep(500);

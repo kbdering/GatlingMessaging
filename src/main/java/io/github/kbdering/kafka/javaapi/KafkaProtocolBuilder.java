@@ -54,6 +54,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private Duration timeoutCheckInterval = Duration.ofSeconds(5);
+
+    public KafkaProtocolBuilder timeoutCheckInterval(Duration interval) {
+        this.timeoutCheckInterval = interval;
+        return this;
+    }
+
     public KafkaProtocolBuilder correlationExtractor(CorrelationExtractor extractor) {
         this.correlationExtractor = extractor;
         return this;
@@ -186,6 +193,15 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public void putConsumerAndProcessor(String topic, ConsumerAndProcessor consumerAndProcessor) {
             this.consumerAndProcessorsByTopic.put(topic, consumerAndProcessor);
         }
+
+        private final Map<String, ActorRef> rawConsumerActorsByTopic = new ConcurrentHashMap<>();
+
+        public ActorRef getRawConsumerActor(String topic) {
+            return rawConsumerActorsByTopic.computeIfAbsent(topic, t -> {
+                return actorSystem.actorOf(io.github.kbdering.kafka.actors.KafkaRawConsumerActor
+                        .props(consumerProperties, t, pollTimeout));
+            });
+        }
     }
 
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
@@ -201,7 +217,9 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                                 .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
                         "kafkaProducerRouter-" + coreComponents.toString());
                 kafkaProtocol.setProducerRouter(producerRouter);
+                kafkaProtocol.setProducerRouter(producerRouter);
             }
+            System.out.println("DEBUG: KafkaProtocolComponents instantiated");
         }
 
         public Function1<Session, Session> onStart() {
@@ -263,7 +281,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         }
 
         if (requestStore == null) {
-            requestStore = new InMemoryRequestStore();
+            requestStore = new InMemoryRequestStore(timeoutCheckInterval.toMillis());
         }
 
         producerProperties.putIfAbsent(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
