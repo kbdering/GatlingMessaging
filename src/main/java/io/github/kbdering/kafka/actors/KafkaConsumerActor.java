@@ -82,14 +82,24 @@ public class KafkaConsumerActor extends AbstractActor {
                     recordList.add(record);
                 }
                 this.messageProcessorRouter.tell(recordList, self());
-                consumer.commitSync();
+                try {
+                    consumer.commitSync();
+                } catch (Exception e) {
+                    logger.error("Error committing offsets", e);
+                }
             }
             self().tell(POLL, self());
         } catch (WakeupException e) {
             // Ignore exception if closing
         } catch (Exception e) {
             logger.error("Error polling Kafka", e);
-            self().tell(POLL, self()); // Continue polling even after error
+            // Add a backoff delay to prevent tight loop on error
+            getContext().system().scheduler().scheduleOnce(
+                    Duration.ofSeconds(1),
+                    self(),
+                    POLL,
+                    getContext().dispatcher(),
+                    self());
         }
     }
 

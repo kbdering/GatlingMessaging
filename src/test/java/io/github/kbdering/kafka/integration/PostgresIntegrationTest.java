@@ -2,8 +2,10 @@ package io.github.kbdering.kafka.integration;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import io.github.kbdering.kafka.util.SerializationType;
+import io.github.kbdering.kafka.cache.BatchProcessor;
 import io.github.kbdering.kafka.cache.PostgresRequestStore;
+import io.github.kbdering.kafka.cache.TimeoutHandler;
+import io.github.kbdering.kafka.util.SerializationType;
 import org.junit.*;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -11,10 +13,12 @@ import org.testcontainers.utility.DockerImageName;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-@Ignore("Docker API compatibility issue. Install Testcontainers Desktop (https://testcontainers.com/desktop/) to run locally.")
+import static org.junit.Assert.*;
+
+// @Ignore("Docker API compatibility issue. Install Testcontainers Desktop (https://testcontainers.com/desktop/) to run locally.")
 public class PostgresIntegrationTest {
 
     private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:16-alpine");
@@ -61,32 +65,34 @@ public class PostgresIntegrationTest {
     public void cleanUpTest() throws SQLException {
         // Clean up test data after each test
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute("TRUNCATE TABLE kafka_requests");
+            conn.createStatement().execute("TRUNCATE TABLE requests");
         }
     }
 
     private static void initializeSchema(DataSource ds) throws SQLException {
         try (Connection conn = ds.getConnection()) {
-            String createTableSQL = "CREATE TABLE IF NOT EXISTS kafka_requests (" +
-                    "correlation_id VARCHAR(255) PRIMARY KEY," +
-                    "key VARCHAR(255)," +
-                    "value_bytes BYTEA," +
+            // Table name must match PostgresRequestStore (requests)
+            String createTableSQL = "CREATE TABLE IF NOT EXISTS requests (" +
+                    "correlation_id UUID PRIMARY KEY," +
+                    "request_key VARCHAR(255)," +
+                    "request_value_bytes BYTEA," +
                     "serialization_type VARCHAR(50)," +
                     "transaction_name VARCHAR(255)," +
                     "scenario_name VARCHAR(255)," +
-                    "start_time BIGINT," +
-                    "timeout_at BIGINT" +
+                    "start_time TIMESTAMP," +
+                    "timeout_time TIMESTAMP," +
+                    "expired BOOLEAN DEFAULT FALSE" +
                     ")";
             conn.createStatement().execute(createTableSQL);
 
-            String createIndexSQL = "CREATE INDEX IF NOT EXISTS idx_timeout_at ON kafka_requests(timeout_at)";
+            String createIndexSQL = "CREATE INDEX IF NOT EXISTS idx_timeout_time ON requests(timeout_time)";
             conn.createStatement().execute(createIndexSQL);
         }
     }
 
     @Test
     public void testStoreAndRetrieveRequest() {
-        String correlationId = "postgres-test-id";
+        String correlationId = UUID.randomUUID().toString();
         String key = "test-key";
         byte[] valueBytes = "test-value".getBytes();
         String transactionName = "PostgresTransaction";
@@ -109,66 +115,85 @@ public class PostgresIntegrationTest {
 
     @Test
     public void testBatchedRecords() {
-        String correlationId1 = "batch-id-1";
-        String correlationId2 = "batch-id-2";
-        String key = "batch-key";
-        byte[] valueBytes = "batch-value".getBytes();
+        String correlationId1 = UUID.randomUUID().toString();
+        String correlationId2 = UUID.randomUUID().toString();
         long startTime = System.currentTimeMillis();
 
-        // Store multiple requests
-        requestStore.storeRequest(correlationId1, key, valueBytes, SerializationType.STRING,
-                "BatchTransaction", "BatchScenario", startTime, 30000);
-        requestStore.storeRequest(correlationId2, key, valueBytes, SerializationType.STRING,
-                "BatchTransaction", "BatchScenario", startTime, 30000);
+        requestStore.storeRequest(correlationId1, "key1", "value1".getBytes(), SerializationType.STRING, "txn", "scn",
+                startTime, 0);
+        requestStore.storeRequest(correlationId2, "key2", "value2".getBytes(), SerializationType.STRING, "txn", "scn",
+                startTime, 0);
 
-        // Retrieve batch (simulate batch processing)
-        Map<String, Object> req1 = requestStore.getRequest(correlationId1);
-        Map<String, Object> req2 = requestStore.getRequest(correlationId2);
+        Map<String, Object> records = new HashMap<>();
+        records.put(correlationId1, "response1");
+        records.put(correlationId2, "response2");
 
-        Assert.assertNotNull("First request should exist", req1);
-        Assert.assertNotNull("Second request should exist", req2);
+        TestBatchProcessor processor = new TestBatchProcessor();
+        requestStore.processBatchedRecords(records, processor);
+
+        assertEquals(2, processor.matched.size());
+        assertTrue(processor.matched.containsKey(correlationId1));
+        assertTrue(processor.matched.containsKey(correlationId2));
+
+        // Verify they are removed
+        assertNull(requestStore.getRequest(correlationId1));
+        assertNull(requestStore.getRequest(correlationId2));
     }
 
     @Test
     public void testRemoveRequest() {
-        String correlationId = "postgres-remove-id";
-        String key = "test-key-remove";
-        byte[] valueBytes = "test-value-remove".getBytes();
-        long startTime = System.currentTimeMillis();
+        String correlationId = UUID.randomUUID().toString();
+        requestStore.storeRequest(correlationId, "key", "val".getBytes(), SerializationType.STRING, "txn", "scn",
+                System.currentTimeMillis(), 0);
 
-        // Store request
-        requestStore.storeRequest(correlationId, key, valueBytes, SerializationType.STRING,
-                "RemoveTransaction", "RemoveScenario", startTime, 30000);
+        assertNotNull(requestStore.getRequest(correlationId));
 
-        // Verify it exists
-        Map<String, Object> retrieved = requestStore.getRequest(correlationId);
-        Assert.assertNotNull("Request should exist before removal", retrieved);
-
-        // Remove request
         requestStore.deleteRequest(correlationId);
-
-        // Verify it's removed
-        Map<String, Object> afterRemoval = requestStore.getRequest(correlationId);
-        Assert.assertNull("Request should be null after removal", afterRemoval);
+        assertNull(requestStore.getRequest(correlationId));
     }
 
     @Test
     public void testProcessTimeouts() throws InterruptedException {
-        String correlationId = "postgres-timeout-id";
-        String key = "test-key-timeout";
-        byte[] valueBytes = "test-value-timeout".getBytes();
-        long startTime = System.currentTimeMillis();
-        long shortTimeout = 100; // 100ms timeout
+        String correlationId = UUID.randomUUID().toString();
+        // Set a short timeout
+        requestStore.storeRequest(correlationId, "key", "val".getBytes(), SerializationType.STRING, "txn", "scn",
+                System.currentTimeMillis(), 100);
 
-        // Store request with short timeout
-        requestStore.storeRequest(correlationId, key, valueBytes, SerializationType.STRING,
-                "TimeoutTransaction", "TimeoutScenario", startTime, shortTimeout);
+        TestTimeoutHandler handler = new TestTimeoutHandler();
+        requestStore.startTimeoutMonitoring(handler);
 
-        // Wait for timeout
-        Thread.sleep(200);
+        // Wait for timeout processing
+        Thread.sleep(1000);
+        // Trigger manually to be sure, although startTimeoutMonitoring starts a
+        // scheduler
+        requestStore.processTimeouts();
 
-        // Verify request still exists (demonstrating integration works)
-        Map<String, Object> retrieved = requestStore.getRequest(correlationId);
-        Assert.assertNotNull("Request should exist (timeout processing is handled by scheduler)", retrieved);
+        assertTrue(handler.timedOutIds.contains(correlationId));
+        assertNull(requestStore.getRequest(correlationId));
+    }
+
+    // Helper class for testBatchedRecords
+    private static class TestBatchProcessor implements BatchProcessor {
+        public final Map<String, Map<String, Object>> matched = new ConcurrentHashMap<>();
+
+        @Override
+        public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
+            matched.put(correlationId, requestData);
+        }
+
+        @Override
+        public void onUnmatched(String correlationId, Object responseValue) {
+            // No-op for test
+        }
+    }
+
+    // Helper class for testProcessTimeouts
+    private static class TestTimeoutHandler implements TimeoutHandler {
+        public final Set<String> timedOutIds = ConcurrentHashMap.newKeySet();
+
+        @Override
+        public void onTimeout(String correlationId, Map<String, Object> requestData) {
+            timedOutIds.add(correlationId);
+        }
     }
 }

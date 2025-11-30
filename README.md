@@ -368,9 +368,69 @@ This project includes comprehensive integration tests using [Testcontainers](htt
 2. **Enable Tests**: Remove `@Ignore` annotations from test classes in `src/test/java/io/github/kbdering/kafka/integration/`.
 3. **Run**: `mvn test`
 
+**Troubleshooting:**
+If you encounter `Could not find a valid Docker environment`, ensure your Docker daemon is running and accessible. You may need to set the `DOCKER_HOST` environment variable or configure `src/test/resources/testcontainers.properties`.
+
 ### Available Integration Tests
 
 - **KafkaIntegrationTest**: End-to-end producer-consumer flow.
 - **RedisIntegrationTest**: `RedisRequestStore` operations.
 - **PostgresIntegrationTest**: `PostgresRequestStore` operations.
 - **MockKafkaRequestReplyIntegrationTest**: Uses `MockProducer` and `MockConsumer` for fast, dependency-free testing of the actor logic.
+
+## 🎓 Tips for Junior Developers
+
+If you are new to Gatling or Kafka, this framework might look a bit intimidating. Here is a guide to help you get started without getting overwhelmed.
+
+### 1. Start Simple: "It Just Works" Mode
+Don't worry about Redis or Postgres yet. The framework uses an `InMemoryRequestStore` by default if you don't configure anything else.
+*   **What it does**: Keeps track of your requests in the memory of the running Java process.
+*   **Limitation**: If you stop the test, the data is gone. But for writing and debugging your first script, this is perfect.
+
+### 2. Understanding `MessageCheck` (The "Scary" Part)
+You will see code like `new MessageCheck<>(..., String.class, ...)` and it looks verbose. Think of it this way:
+*   **Inputs**: You need to tell the framework "I sent a String" and "I expect a String back".
+*   **Logic**: The lambda `(req, res) -> ...` is just a function where you compare the two.
+*   **Tip**: Copy-paste the examples in this README! You rarely need to write this from scratch.
+
+### 3. Fire-and-Forget vs. Request-Reply
+*   **Use Request-Reply (Default)** when you need to verify that your application *actually processed* the message correctly. This is for **Quality**.
+*   **Use Fire-and-Forget** (`waitForAck = false`) when you just want to see if your broker can handle 1 million messages per second. This is for **Quantity**.
+
+### 4. IDE is Your Friend
+The `kafkaRequestReply` method has many arguments. Use your IDE (IntelliJ/Eclipse) to help you:
+*   **Cmd+P / Ctrl+P**: Shows you which parameter comes next.
+*   **Auto-Complete**: Type `KafkaDsl.` and see what's available.
+
+### 5. The "Bus vs. Taxi" Analogy (Batching & Latency)
+Kafka is designed to move massive amounts of data, but you have to choose between **Efficiency (Throughput)** and **Speed (Latency)**.
+
+*   **The Bus (High Throughput)**:
+    *   **Scenario**: You want to move 10,000 people.
+    *   **Strategy**: Wait for the bus to fill up (`linger.ms=10`).
+    *   **Result**: High efficiency, fewer network requests.
+    *   **Trade-off**: The first person on the bus has to wait for the last person before leaving.
+
+*   **The Taxi (Low Latency)**:
+    *   **Scenario**: You want to move 1 person *immediately*.
+    *   **Strategy**: Leave right now (`linger.ms=0`).
+    *   **Result**: Lowest possible latency for that person.
+    *   **Trade-off**: Inefficient. You are sending a whole vehicle for just one person.
+
+*   **The Fleet (Concurrency)**:
+    *   **Scenario**: You have 10,000 people who ALL want "Taxi" speed.
+    *   **Problem**: A single driver cannot drive 10,000 taxis at once.
+    *   **Solution**: You need more drivers (`numProducers`).
+    *   **Rule of Thumb**:
+        *   **Standard**: `numProducers(1)` is enough for 90% of cases (Bus mode).
+        *   **Low Latency**: If you force `linger.ms=0` (Taxi mode) AND have high volume, you MUST increase `numProducers` (e.g., 4-8) to handle the concurrency, otherwise requests will queue up waiting for the driver.
+
+### 6. The Broker's Perspective (Why this matters)
+It is important to understand that the Kafka Broker writes **Batches** to disk, not individual messages.
+*   **1000 messages in 1 batch** = 1 Disk Write (Efficient).
+*   **1000 messages in 1000 batches** = 1000 Disk Writes (Heavy Load).
+
+**Your Goal**:
+Unless you are specifically testing the Broker's limits (e.g., "Can it handle 50k IOPS?"), your goal is usually to measure the **End-to-End Latency** of your application.
+*   Don't obsess over "Messages Per Second" if it means destroying your latency.
+*   A realistic test often uses moderate batching (e.g., `linger.ms=5`) to simulate real-world traffic patterns where multiple users are active simultaneously.

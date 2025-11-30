@@ -280,6 +280,10 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         consumerProperties.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
+        // Safer defaults to prevent OOM/blocking when broker is down
+        producerProperties.putIfAbsent(ProducerConfig.MAX_BLOCK_MS_CONFIG, 10000); // 10 seconds
+        producerProperties.putIfAbsent(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 30000); // 30 seconds
+
         return new KafkaProtocol(
                 new HashMap<>(producerProperties),
                 new HashMap<>(consumerProperties),
