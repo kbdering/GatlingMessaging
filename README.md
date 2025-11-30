@@ -422,40 +422,40 @@ The Gatling Kafka extension uses standard Apache Kafka clients, which automatica
 ### Viewing Metrics
 1.  **JConsole / VisualVM**: Connect to the Gatling JVM process and navigate to the MBeans tab.
 2.  **Prometheus JMX Exporter**: Configure the agent to scrape the MBeans listed above and visualize them in Grafana.
-426: 
-427: ### 3. Asserting on JMX Metrics (Metric Injection)
-428: 
-429: You can inject internal Kafka client metrics (like consumer lag) directly into the Gatling simulation loop. This allows you to fail the test if the system is not healthy, even if response times are low.
-430: 
-431: **Enable Metric Injection:**
-432: 
-433: ```java
-434: KafkaProtocolBuilder protocol = kafka()
-435:     // ... other config
-436:     .metricInjectionInterval(Duration.ofSeconds(1)); // Inject metrics every second
-437: ```
-438: 
-439: **Assert on Metrics:**
-440: 
-441: Once enabled, metrics appear in the Gatling stats as pseudo-requests with the name "Kafka Metrics". You can use standard Gatling assertions on them.
-442: 
-443: ```java
-444: setUp(scn.injectOpen(atOnceUsers(1)))
-445:     .protocols(protocol)
-446:     .assertions(
-447:         // Fail if max consumer lag exceeds 100 records
-448:         details("Kafka Metrics").max("kafka-consumer-lag-max").lt(100),
-449:         
-450:         // Fail if we have any record errors
-451:         details("Kafka Metrics").max("kafka-producer-record-error-rate").is(0.0)
-452:     );
-453: ```
-454: 
-455: **Available Injected Metrics:**
-456: *   `kafka-consumer-lag-max`
-457: *   `kafka-producer-record-error-rate`
-458: *   `kafka-producer-request-latency-avg`
-459: *   `kafka-consumer-fetch-latency-avg`
+
+### 3. Asserting on JMX Metrics (Metric Injection)
+
+You can inject internal Kafka client metrics (like consumer lag) directly into the Gatling simulation loop. This allows you to fail the test if the system is not healthy, even if response times are low.
+
+**Enable Metric Injection:**
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    // ... other config
+    .metricInjectionInterval(Duration.ofSeconds(1)); // Inject metrics every second
+```
+
+**Assert on Metrics:**
+
+Once enabled, metrics appear in the Gatling stats as pseudo-requests with the name "Kafka Metrics". You can use standard Gatling assertions on them.
+
+```java
+setUp(scn.injectOpen(atOnceUsers(1)))
+    .protocols(protocol)
+    .assertions(
+        // Fail if max consumer lag exceeds 100 records
+        details("Kafka Metrics").max("kafka-consumer-lag-max").lt(100),
+        
+        // Fail if we have any record errors
+        details("Kafka Metrics").max("kafka-producer-record-error-rate").is(0.0)
+    );
+```
+
+**Available Injected Metrics:**
+*   `kafka-consumer-lag-max`
+*   `kafka-producer-record-error-rate`
+*   `kafka-producer-request-latency-avg`
+*   `kafka-consumer-fetch-latency-avg`
 
 ## 🎓 Tips for Junior Developers
 
