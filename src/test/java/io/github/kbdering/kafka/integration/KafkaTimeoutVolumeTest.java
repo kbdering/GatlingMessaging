@@ -1,7 +1,5 @@
 package io.github.kbdering.kafka.integration;
 
-import io.gatling.app.Gatling;
-
 import io.github.kbdering.kafka.simulations.KafkaTimeoutVolumeSimulation;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -26,14 +24,12 @@ public class KafkaTimeoutVolumeTest {
     }
 
     @Test
-    @org.junit.Ignore("Gatling.main calls System.exit, which crashes Surefire. Run via mvn gatling:test")
     public void testTimeoutVolume() {
         String[] args = new String[] {
                 "-s", KafkaTimeoutVolumeSimulation.class.getName(),
                 "-rf", "target/gatling",
-                "-rd", "volume-test"
+                "-rd", "timeout-volume-test"
         };
-
-        Gatling.main(args);
+        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
     }
 }

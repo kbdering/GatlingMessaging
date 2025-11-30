@@ -106,6 +106,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private Duration metricInjectionInterval = null;
+
+    public KafkaProtocolBuilder metricInjectionInterval(Duration interval) {
+        this.metricInjectionInterval = interval;
+        return this;
+    }
+
     @Override
     public Protocol protocol() {
         return build();
@@ -130,12 +137,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final RequestStore requestStore;
         private final CorrelationExtractor correlationExtractor;
         private final Duration pollTimeout;
+        private final Duration metricInjectionInterval;
         private ActorRef producerRouter;
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
-                CorrelationExtractor correlationExtractor, Duration pollTimeout) {
+                CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -144,6 +152,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.requestStore = requestStore;
             this.correlationExtractor = correlationExtractor;
             this.pollTimeout = pollTimeout;
+            this.metricInjectionInterval = metricInjectionInterval;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -178,6 +187,10 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             return pollTimeout;
         }
 
+        public Duration getMetricInjectionInterval() {
+            return metricInjectionInterval;
+        }
+
         public ActorRef getProducerRouter() {
             return producerRouter;
         }
@@ -207,6 +220,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
         private final KafkaProtocol kafkaProtocol;
         private final CoreComponents coreComponents;
+        private java.util.concurrent.ScheduledExecutorService metricScheduler;
 
         public KafkaProtocolComponents(KafkaProtocol kafkaProtocol, CoreComponents coreComponents) {
             this.kafkaProtocol = kafkaProtocol;
@@ -242,12 +256,66 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                             scala.Option.apply("Request timed out"));
                 }
             });
+
+            if (kafkaProtocol.getMetricInjectionInterval() != null) {
+                startMetricInjection();
+            }
+
             return session -> session;
+        }
+
+        private void startMetricInjection() {
+            metricScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "KafkaMetricInjector");
+                t.setDaemon(true);
+                return t;
+            });
+
+            metricScheduler.scheduleAtFixedRate(() -> {
+                try {
+                    javax.management.MBeanServer mBeanServer = java.lang.management.ManagementFactory
+                            .getPlatformMBeanServer();
+                    long now = System.currentTimeMillis();
+
+                    // Consumer Lag Max
+                    java.util.Set<javax.management.ObjectName> consumerMetrics = mBeanServer.queryNames(
+                            new javax.management.ObjectName("kafka.consumer:type=consumer-metrics,client-id=*"), null);
+
+                    double maxLag = 0.0;
+                    for (javax.management.ObjectName name : consumerMetrics) {
+                        try {
+                            Object val = mBeanServer.getAttribute(name, "records-lag-max");
+                            if (val instanceof Number) {
+                                maxLag = Math.max(maxLag, ((Number) val).doubleValue());
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+
+                    // Log Lag as a "Response Time" (so we can assert on max value)
+                    // We log it as OK request
+                    coreComponents.statsEngine().logResponse(
+                            "Kafka Metrics",
+                            scala.collection.immutable.List$.MODULE$.empty(),
+                            "kafka-consumer-lag-max",
+                            now - (long) maxLag, // Start time = now - lag, so Duration = lag
+                            now,
+                            io.gatling.commons.stats.Status.apply("OK"),
+                            scala.Option.empty(),
+                            scala.Option.empty());
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }, 0, kafkaProtocol.getMetricInjectionInterval().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
         }
 
         public Function1<Session, BoxedUnit> onExit() {
             return session -> {
                 kafkaProtocol.getRequestStore().stopTimeoutMonitoring();
+                if (metricScheduler != null) {
+                    metricScheduler.shutdownNow();
+                }
                 return BoxedUnit.UNIT;
             };
         }
@@ -273,8 +341,30 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     }
 
     public KafkaProtocol build() {
-        Objects.requireNonNull(bootstrapServers, "bootstrapServers must not be set");
-        Objects.requireNonNull(groupId, "groupId must be set for request-reply");
+        if (bootstrapServers == null || bootstrapServers.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Kafka bootstrap servers are not configured.\n" +
+                            "Potential Fix: Ensure you call .bootstrapServers(\"host:port\") in your KafkaProtocolBuilder.");
+        }
+
+        // Only require groupId if we have consumers
+        if (numConsumers > 0 && (groupId == null || groupId.trim().isEmpty())) {
+            throw new IllegalArgumentException(
+                    "Kafka consumer group ID is not configured, but numConsumers is > 0.\n" +
+                            "Potential Fix: Ensure you call .groupId(\"my-group-id\") in your KafkaProtocolBuilder.");
+        }
+
+        if (numProducers <= 0) {
+            throw new IllegalArgumentException(
+                    "numProducers must be greater than 0.\n" +
+                            "Potential Fix: Check your .numProducers() configuration.");
+        }
+
+        if (numConsumers < 0) {
+            throw new IllegalArgumentException(
+                    "numConsumers must be non-negative.\n" +
+                            "Potential Fix: Check your .numConsumers() configuration.");
+        }
 
         if (actorSystem == null) {
             actorSystem = ActorSystem.create("GatlingKafkaSystem");
@@ -294,7 +384,9 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 StringDeserializer.class.getName());
         consumerProperties.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 ByteArrayDeserializer.class.getName());
-        consumerProperties.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        if (groupId != null) {
+            consumerProperties.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        }
         consumerProperties.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
         consumerProperties.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
@@ -310,6 +402,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 numConsumers,
                 requestStore,
                 correlationExtractor,
-                pollTimeout);
+                pollTimeout,
+                metricInjectionInterval);
     }
 }

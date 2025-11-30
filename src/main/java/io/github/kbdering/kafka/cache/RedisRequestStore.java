@@ -120,6 +120,11 @@ public class RedisRequestStore implements RequestStore {
                 p.zadd(timeoutSetKey, timeoutTimestamp, correlationId);
             }
             p.sync();
+        } catch (JedisException e) {
+            logger.error(
+                    "Failed to connect to Redis. Potential Fix: Ensure Redis is running and accessible at the configured host:port.",
+                    e);
+            throw e;
         }
     }
 

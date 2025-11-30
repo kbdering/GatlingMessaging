@@ -32,7 +32,13 @@ public class KafkaProducerActor extends AbstractActor {
     }
 
     public KafkaProducerActor(Map<String, Object> producerProperties) {
-        this(new KafkaProducer<>(producerProperties));
+        logger.info("Starting KafkaProducerActor with properties: {}", producerProperties);
+        try {
+            this.producer = new KafkaProducer<>(producerProperties);
+        } catch (KafkaException e) {
+            logger.error("Failed to create Kafka Producer. Check your bootstrap.servers configuration.", e);
+            throw e;
+        }
     }
 
     // Visible for testing
