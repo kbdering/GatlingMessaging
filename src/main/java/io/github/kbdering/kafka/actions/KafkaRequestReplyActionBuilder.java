@@ -29,6 +29,13 @@ import io.github.kbdering.kafka.actors.KafkaConsumerActor;
 import io.github.kbdering.kafka.actors.KafkaMessages;
 import io.github.kbdering.kafka.actors.KafkaProducerActor;
 
+import org.apache.pekko.pattern.Patterns;
+import org.apache.pekko.util.Timeout;
+import scala.concurrent.Future;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import io.gatling.commons.stats.Status;
+import scala.collection.immutable.List$;
+
 public class KafkaRequestReplyActionBuilder implements ActionBuilder {
 
     private final String requestName;
@@ -39,6 +46,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
     private final SerializationType requestSerializationType;
     private final Protocol kafkaProtocol;
     private final List<MessageCheck<?, ?>> messageChecks;
+    private final boolean waitForAck;
     private final long timeout;
     private final TimeUnit timeUnit;
 
@@ -48,6 +56,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
             SerializationType requestSerializationType,
             Protocol kafkaProtocol,
             List<MessageCheck<?, ?>> messageChecks,
+            boolean waitForAck,
             long timeout, TimeUnit timeUnit) {
         this.requestName = requestName;
         this.requestTopic = Objects.requireNonNull(requestTopic, "requestTopic must not be null");
@@ -58,6 +67,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
                 "requestSerializationType must not be null");
         this.kafkaProtocol = kafkaProtocol;
         this.messageChecks = (messageChecks != null) ? messageChecks : Collections.emptyList();
+        this.waitForAck = waitForAck;
         this.timeout = timeout;
         this.timeUnit = Objects.requireNonNull(timeUnit, "timeUnit must not be null");
     }
@@ -94,8 +104,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
 
                 return new KafkaRequestReplyAction(requestName, concreteProtocol, ctx.coreComponents(), next,
                         requestTopic, keyFunction,
-                        valueFunction, requestSerializationType, true, timeout, timeUnit); // Assuming waitForAck=true
-                                                                                           // for request-reply
+                        valueFunction, requestSerializationType, waitForAck, timeout, timeUnit);
             }
         };
     }
@@ -156,8 +165,6 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
         // Store request for correlation
         RequestStore requestStore = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getRequestStore();
-        // We need to store bytes for the store, or update store to accept Object?
-        // RequestStore interface was updated to accept Object.
         requestStore.storeRequest(correlationId, resolvedKey, valueObj, serializationType, requestName,
                 session.scenario(), startTime, timeUnit.toMillis(timeout));
 
@@ -165,17 +172,52 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                 topic, resolvedKey, valueObj, correlationId);
 
         ActorRef producerRouter = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getProducerRouter();
-        producerRouter.tell(message, ActorRef.noSender());
 
-        // We don't wait for ACK in the same way here, we rely on the MessageProcessor
-        // to match the reply
-        // But if we want to track the *send* failure, we might want to ask.
-        // For now, let's assume fire-and-forget for the send part in Request-Reply to
-        // avoid double blocking,
-        // or we could use ask pattern just for the send confirmation.
-        // The original code didn't wait for ack on send in request-reply explicitly in
-        // the same block.
+        if (!waitForAck) {
+            producerRouter.tell(message, ActorRef.noSender());
+            // In fire-and-forget for request-reply, we don't log a separate "Send" metric
+            // because the user cares about the E2E transaction.
+            // Or should we? The user asked to "measure the duration it takes to send".
+            // If waitForAck is false, the duration is effectively 0 (async).
+            next.execute(session);
+            return;
+        }
 
+        // Wait for ACK
+        Timeout askTimeout = new Timeout(timeout, timeUnit);
+        Future<Object> future = Patterns.ask(producerRouter, message, askTimeout);
+        java.util.concurrent.CompletionStage<Object> javaFuture = scala.jdk.javaapi.FutureConverters.asJava(future);
+
+        javaFuture.whenComplete((response, exception) -> {
+            long endTime = coreComponents.clock().nowMillis();
+            if (exception != null) {
+                // If send fails, the whole transaction fails
+                handleFailure(session, statsEngine, startTime, endTime, exception);
+            } else {
+                if (response instanceof RecordMetadata) {
+                    // Log the SEND duration
+                    statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + "-Send", startTime,
+                            endTime, Status.apply("OK"),
+                            scala.Some.apply("200"), scala.Some.apply(""));
+                    next.execute(session);
+                } else if (response instanceof org.apache.pekko.actor.Status.Failure) {
+                    Throwable e = ((org.apache.pekko.actor.Status.Failure) response).cause();
+                    handleFailure(session, statsEngine, startTime, endTime, e);
+                } else {
+                    handleFailure(session, statsEngine, startTime, endTime,
+                            new RuntimeException("Unknown response from actor: " + response));
+                }
+            }
+        });
+    }
+
+    private void handleFailure(io.gatling.core.session.Session session, StatsEngine statsEngine, long startTime,
+            long endTime, Throwable e) {
+        session.markAsFailed();
+        statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + "-Send", startTime, endTime,
+                Status.apply("KO"),
+                scala.Some.apply("500"), scala.Some.apply("Send Failed: " + e.getMessage()));
+        logger.error("Kafka Request-Reply Send failed", e);
         next.execute(session);
     }
 
