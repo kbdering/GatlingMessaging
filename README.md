@@ -217,10 +217,94 @@ CREATE TABLE requests (
     timeout_time TIMESTAMP,
     expired BOOLEAN DEFAULT FALSE
 );
+
+-- Recommended indexes for performance
+CREATE INDEX idx_requests_timeout ON requests(timeout_time) WHERE NOT expired;
+CREATE INDEX idx_requests_scenario ON requests(scenario_name);
 ```
+
+**HikariCP Connection Pool Configuration:**
+```java
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
+HikariConfig config = new HikariConfig();
+config.setJdbcUrl("jdbc:postgresql://localhost:5432/gatling");
+config.setUsername("gatling");
+config.setPassword("password");
+
+// Connection pool sizing
+config.setMaximumPoolSize(30);        // See sizing guide below
+config.setMinimumIdle(5);             // Keep warm connections
+config.setConnectionTimeout(10000);   // 10s max wait
+config.setIdleTimeout(600000);        // 10min idle timeout
+config.setMaxLifetime(1800000);       // 30min max lifetime
+config.setLeakDetectionThreshold(60000); // Warn if connection held > 60s
+
+// Performance optimizations
+config.addDataSourceProperty("cachePrepStmts", "true");
+config.addDataSourceProperty("prepStmtCacheSize", "250");
+config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+
+HikariDataSource dataSource = new HikariDataSource(config);
+```
+
+**PostgreSQL Connection Pool Sizing:**
+
+| Test Scale | Concurrent Writes | Recommended Pool Size | Postgres `max_connections` |
+|------------|-------------------|----------------------|----------------------------|
+| Small | < 50/sec | 10-20 | 100 |
+| Medium | 50-200/sec | 20-40 | 200 |
+| Large | 200-500/sec | 40-80 | 300 |
+| Very Large | 500+/sec | Consider sharding | 500+ |
+
+**Sizing Formula:**
+```
+Pool Size = (Concurrent Requests) × (Query Duration in sec) + 5 (overhead)
+Example: 100 concurrent × 0.05s query time + 5 = 10 connections
+```
+
+> **Important**: PostgreSQL `max_connections` should be at least 2× the total pool size across all Gatling instances.
 
 #### Option B: Redis (High Performance)
 Requires a Redis instance. Stores payloads as Base64 strings.
+
+**Connection Pool Configuration:**
+```java
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
+JedisPoolConfig poolConfig = new JedisPoolConfig();
+poolConfig.setMaxTotal(50);        // Max connections (see sizing guide below)
+poolConfig.setMaxIdle(20);         // Max idle connections
+poolConfig.setMinIdle(5);          // Min idle connections for fast startup
+poolConfig.setTestOnBorrow(true);  // Validate connections
+poolConfig.setBlockWhenExhausted(true);
+poolConfig.setMaxWaitMillis(3000); // Wait max 3s for connection
+
+JedisPool pool = new JedisPool(poolConfig, "localhost", 6379);
+```
+
+**Redis Connection Pool Sizing Recommendations:**
+
+| Test Scale | Users/sec | Recommended `maxTotal` | Notes |
+|------------|-----------|------------------------|-------|
+| Small (Dev) | < 10 | 10-20 | Default settings OK |
+| Medium | 10-100 | 30-50 | Monitor connection waits |
+| Large | 100-500 | 50-100 | Tune `minIdle` to 20-30 |
+| Very Large | 500+ | 100-200 | Consider Redis clustering |
+
+**Sizing Formula:**
+```
+maxTotal = (Peak Users/sec) × (Avg Request Duration in sec) × 1.5 (safety margin)
+Example: 100 users/sec × 0.2s duration × 1.5 = 30 connections
+```
+
+**Performance Tips:**
+- **Monitor**: Track "pool exhausted" errors in logs
+- **Redis Memory**: Set `maxmemory` and use `allkeys-lru` eviction policy
+- **Network**: Ensure low latency to Redis (< 1ms ideal)
+- **Persistence**: Disable RDB/AOF for pure cache use cases
 
 #### Option C: In-Memory Store (Development/Debugging Only)
 Stores requests in a local `ConcurrentHashMap`. **Warning:** Data is lost on restart.
@@ -396,6 +480,103 @@ If you encounter `Could not find a valid Docker environment`, ensure your Docker
 - **RedisIntegrationTest**: `RedisRequestStore` operations.
 - **PostgresIntegrationTest**: `PostgresRequestStore` operations.
 - **MockKafkaRequestReplyIntegrationTest**: Uses `MockProducer` and `MockConsumer` for fast, dependency-free testing of the actor logic.
+
+---
+
+## Docker Compose Setup
+
+The easiest way to get started is using the provided Docker Compose environment, which includes Kafka (with TLS), Redis, PostgreSQL, and Kafka UI.
+
+### Prerequisites
+- Docker Desktop or Docker Engine + Docker Compose
+- OpenSSL and Java keytool (for TLS certificates)
+
+### Quick Start
+
+```bash
+# 1. Generate TLS certificates (first time only)
+chmod +x scripts/generate-tls-certs.sh
+./scripts/generate-tls-certs.sh
+
+# 2. Start all services
+docker-compose up -d
+
+# 3. Verify services are healthy
+docker-compose ps
+
+# 4. Create test topics
+docker exec gatling-kafka kafka-topics --create \
+  --bootstrap-server localhost:9092 \
+  --topic request_topic \
+  --partitions 4 \
+  --replication-factor 1
+
+docker exec gatling-kafka kafka-topics --create \
+  --bootstrap-server localhost:9092 \
+  --topic response_topic \
+  --partitions 4 \
+  --replication-factor 1
+
+# 5. Access Kafka UI (optional)
+open http://localhost:8080
+```
+
+### Available Services
+
+| Service | Port(s) | Description |
+|---------|---------|-------------|
+| **Kafka** | 9092 (PLAINTEXT), 9093 (TLS) | Message broker |
+| **Zookeeper** | 2181 | Kafka coordination |
+| **Redis** | 6379 | Request store (high performance) |
+| **PostgreSQL** | 5432 | Request store (durable) |
+| **Kafka UI** | 8080 | Web interface for Kafka |
+
+### Using TLS/SSL with Kafka
+
+The Docker Compose setup supports both plaintext (port 9092) and TLS (port 9093) connections.
+
+#### Configure Gatling for TLS
+
+```java
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.SslConfigs;
+import java.util.Map;
+
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9093") // Use TLS port
+    .producerProperties(Map.of(
+        // TLS Configuration
+        ProducerConfig.SECURITY_PROTOCOL_CONFIG, "SSL",
+        SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, "./tls-certs/kafka.client.truststore.jks",
+        SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, "kafkatest123",
+        SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, "", // Disable for localhost
+        
+        // Performance settings
+        ProducerConfig.ACKS_CONFIG, "all",
+        ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4"
+    ))
+    .consumerProperties(Map.of(
+        // TLS Configuration
+        "security.protocol", "SSL",
+        SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, "./tls-certs/kafka.client.truststore.jks",
+        SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, "kafkatest123",
+        SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG, ""
+    ));
+```
+
+> **Security Note**: The generated certificates use a test password (`kafkatest123`). For production, use a secrets management system (e.g., HashiCorp Vault, AWS Secrets Manager).
+
+### Cleanup
+
+```bash
+# Stop services
+docker-compose down
+
+# Remove all data (Redis cache, Postgres DB)
+docker-compose down -v
+```
+
+---
 
 
 ## Monitoring & Metrics

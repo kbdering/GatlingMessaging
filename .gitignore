@@ -1,5 +1,22 @@
-*.DS_Store
+target/
+*.class
+*.jar
+*.war
+*.ear
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# TLS certificates (generated)
+tls-certs/*.jks
+tls-certs/*.pem
+tls-certs/ca-*
+tls-certs/broker-*
+!tls-certs/creds
+
+# Log files
+*.log
 jmeter.log
-/target/*
-*.hprof
-java_pid*
+test_output.log
+final_test_output.txt
