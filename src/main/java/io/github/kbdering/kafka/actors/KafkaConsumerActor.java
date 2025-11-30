@@ -32,8 +32,22 @@ public class KafkaConsumerActor extends AbstractActor {
     private KafkaConsumerActor(Map<String, Object> consumerProperties, String responseTopic,
             ActorRef messageProcessorRouter, CoreComponents coreComponents, Duration pollDuration) {
         Map<String, Object> updatedConsumerProps = new HashMap<>(consumerProperties);
-        // Removed forced ByteArrayDeserializer to allow user configuration
-        this.consumer = new KafkaConsumer<>(updatedConsumerProps);
+
+        logger.info("Starting KafkaConsumerActor for topic: {} with group: {}", responseTopic,
+                updatedConsumerProps.get("group.id"));
+        if (!updatedConsumerProps.containsKey("auto.offset.reset")) {
+            logger.warn(
+                    "auto.offset.reset is not set. Defaulting to 'latest' which may cause missed messages in tests.");
+        }
+
+        try {
+            this.consumer = new KafkaConsumer<>(updatedConsumerProps);
+        } catch (Exception e) {
+            logger.error("Failed to create Kafka Consumer. Check your bootstrap.servers and group.id configuration.",
+                    e);
+            throw e;
+        }
+
         this.messageProcessorRouter = messageProcessorRouter;
         this.pollDuration = pollDuration;
         consumer.subscribe(Collections.singletonList(responseTopic));
