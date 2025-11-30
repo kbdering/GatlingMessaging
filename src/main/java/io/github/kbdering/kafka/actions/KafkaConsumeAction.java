@@ -25,14 +25,17 @@ public class KafkaConsumeAction implements Action {
     private final long timeout;
     private final TimeUnit timeUnit;
 
+    private final String saveAsKey;
+
     public KafkaConsumeAction(String requestName, ActorRef consumerActor, CoreComponents coreComponents, Action next,
-            long timeout, TimeUnit timeUnit) {
+            long timeout, TimeUnit timeUnit, String saveAsKey) {
         this.requestName = requestName;
         this.consumerActor = consumerActor;
         this.coreComponents = coreComponents;
         this.next = next;
         this.timeout = timeout;
         this.timeUnit = timeUnit;
+        this.saveAsKey = saveAsKey;
     }
 
     @Override
@@ -57,18 +60,21 @@ public class KafkaConsumeAction implements Action {
             } else {
                 if (response instanceof ConsumerRecord) {
                     ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) response;
-                    // Here we could apply checks if we had them.
-                    // For now, we just log success.
-                    // We might want to store the record in the session?
-                    // But Action.execute is void and next.execute takes the session.
-                    // We can return a new session with the record.
 
-                    // TODO: Add checks support. For now, just raw consume.
+                    Session newSession = session;
+                    if (saveAsKey != null) {
+                        // Save the record value (or the whole record?)
+                        // Let's save the value for simplicity, or maybe the whole record object?
+                        // Saving the value is most common.
+                        // If the user wants key/headers, maybe we need more specific saveAs?
+                        // For now, let's save the VALUE.
+                        newSession = session.set(saveAsKey, record.value());
+                    }
 
-                    statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName, startTime,
+                    statsEngine.logResponse(newSession.scenario(), List$.MODULE$.empty(), requestName, startTime,
                             endTime, Status.apply("OK"),
                             scala.Some.apply("200"), scala.Some.apply(""));
-                    next.execute(session);
+                    next.execute(newSession);
                 } else {
                     handleFailure(session, statsEngine, startTime, endTime,
                             new RuntimeException("Unknown response: " + response));

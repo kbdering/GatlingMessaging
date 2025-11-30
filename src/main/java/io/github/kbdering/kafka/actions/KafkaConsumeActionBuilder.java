@@ -16,6 +16,8 @@ public class KafkaConsumeActionBuilder implements ActionBuilder {
     private final long timeout;
     private final TimeUnit timeUnit;
 
+    private String saveAsKey;
+
     public KafkaConsumeActionBuilder(String requestName, String topic) {
         this(requestName, topic, 30, TimeUnit.SECONDS);
     }
@@ -25,6 +27,11 @@ public class KafkaConsumeActionBuilder implements ActionBuilder {
         this.topic = topic;
         this.timeout = timeout;
         this.timeUnit = timeUnit;
+    }
+
+    public KafkaConsumeActionBuilder saveAs(String key) {
+        this.saveAsKey = key;
+        return this;
     }
 
     @Override
@@ -46,7 +53,7 @@ public class KafkaConsumeActionBuilder implements ActionBuilder {
                 ActorRef consumerActor = ((KafkaProtocolBuilder.KafkaProtocol) protocol).getRawConsumerActor(topic);
 
                 return new KafkaConsumeAction(requestName, consumerActor, ctx.coreComponents(), next, timeout,
-                        timeUnit);
+                        timeUnit, saveAsKey);
             }
         };
     }

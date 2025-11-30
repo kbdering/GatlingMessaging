@@ -1,15 +1,14 @@
 package io.github.kbdering.kafka.integration;
 
 import io.gatling.app.Gatling;
-
-import io.github.kbdering.kafka.simulations.KafkaTimeoutVolumeSimulation;
+import io.github.kbdering.kafka.simulations.KafkaRawConsumeSimulation;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-public class KafkaTimeoutVolumeTest {
+public class KafkaRawConsumeSimulationTest {
 
     public static final KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.4.0"));
 
@@ -27,11 +26,11 @@ public class KafkaTimeoutVolumeTest {
 
     @Test
     @org.junit.Ignore("Gatling.main calls System.exit, which crashes Surefire. Run via mvn gatling:test")
-    public void testTimeoutVolume() {
+    public void testRawConsumeSimulation() {
         String[] args = new String[] {
-                "-s", KafkaTimeoutVolumeSimulation.class.getName(),
+                "-s", KafkaRawConsumeSimulation.class.getName(),
                 "-rf", "target/gatling",
-                "-rd", "volume-test"
+                "-rd", "raw-consume-test"
         };
 
         Gatling.main(args);
