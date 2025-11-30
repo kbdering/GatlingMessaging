@@ -63,7 +63,6 @@ public class PostgresRequestStore implements RequestStore {
             }
 
             pstmt.executeUpdate();
-            pstmt.executeUpdate();
         } catch (SQLException e) {
             logger.error(
                     "Error storing request in PostgreSQL. Potential Fix: Check your JDBC URL, username, password, and ensure the 'requests' table exists.",
