@@ -161,6 +161,21 @@ You can use the `consume` action to read a message from a topic and save it to t
 })
 ```
 
+### Custom Headers
+
+You can send custom headers with your Kafka messages. This is useful for passing metadata, tracing information, or routing details.
+
+```java
+.exec(
+    kafka("Send with Headers", "my_topic", "my_key", "my_value")
+        .headers(Map.of(
+            "X-Correlation-ID", session -> UUID.randomUUID().toString(),
+            "X-Source", session -> "Gatling-Load-Test",
+            "X-Timestamp", session -> String.valueOf(System.currentTimeMillis())
+        ))
+)
+```
+
 ## Request-Reply Pattern
 
 This is the core feature of the extension. It allows you to test systems that consume a message, process it, and send a reply to another topic.
@@ -170,7 +185,7 @@ This is the core feature of the extension. It allows you to test systems that co
 2.  Gatling sends the request message (with `correlationId` in headers or payload) to the `request_topic`.
 3.  Gatling stores the request details (key, payload, timestamp) in a **Request Store**.
 4.  Your Application consumes the request, processes it, and sends a response to the `response_topic`.
-5.  **Crucial:** The response MUST contain the same `correlationId` (usually in the header).
+5.  **Crucial:** The response MUST contain the same `correlationId` (usually in the header, configurable via `correlationHeaderName`).
 6.  The Gatling Kafka Consumer reads the response.
 7.  It looks up the original request in the **Request Store** using the `correlationId`.
 8.  If found, it runs your **Message Checks** to validate the response against the request and records the transaction time in the Gatling report.
@@ -439,10 +454,18 @@ KafkaProtocolBuilder protocol = kafka()
         new JsonPathExtractor("$.meta.correlationId") 
     )
     // ... other config
-    .correlationExtractor(
-        // Extract the value at path $.meta.correlationId
-        new JsonPathExtractor("$.meta.correlationId") 
-    );
+    ;
+```
+
+### Configurable Correlation Header
+
+By default, the extension uses a header named `correlationId` to track requests. If your application uses a different header name (e.g., `traceId`, `X-Request-ID`), you can configure it in the protocol.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .correlationHeaderName("X-Request-ID") // Use custom header for correlation
+    // ... other config
 ```
 
 ## Schema Registry Support (Avro & Protobuf)

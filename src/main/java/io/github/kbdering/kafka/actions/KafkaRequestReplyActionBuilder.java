@@ -46,6 +46,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
     private final SerializationType requestSerializationType;
     private final Protocol kafkaProtocol;
     private final List<MessageCheck<?, ?>> messageChecks;
+    private final java.util.Map<String, Function<Session, String>> headers;
     private final boolean waitForAck;
     private final long timeout;
     private final TimeUnit timeUnit;
@@ -58,6 +59,19 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
             List<MessageCheck<?, ?>> messageChecks,
             boolean waitForAck,
             long timeout, TimeUnit timeUnit) {
+        this(requestName, requestTopic, responseTopic, keyFunction, valueFunction, null, requestSerializationType,
+                kafkaProtocol, messageChecks, waitForAck, timeout, timeUnit);
+    }
+
+    public KafkaRequestReplyActionBuilder(String requestName, String requestTopic, String responseTopic,
+            Function<Session, String> keyFunction,
+            Function<Session, Object> valueFunction,
+            java.util.Map<String, Function<Session, String>> headers,
+            SerializationType requestSerializationType,
+            Protocol kafkaProtocol,
+            List<MessageCheck<?, ?>> messageChecks,
+            boolean waitForAck,
+            long timeout, TimeUnit timeUnit) {
         this.requestName = requestName;
         this.requestTopic = Objects.requireNonNull(requestTopic, "requestTopic must not be null");
         this.responseTopic = responseTopic;
@@ -65,6 +79,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
         this.valueFunction = Objects.requireNonNull(valueFunction, "valueFunction must not be null");
         this.requestSerializationType = Objects.requireNonNull(requestSerializationType,
                 "requestSerializationType must not be null");
+        this.headers = headers != null ? headers : Collections.emptyMap();
         this.kafkaProtocol = kafkaProtocol;
         this.messageChecks = (messageChecks != null) ? messageChecks : Collections.emptyList();
         this.waitForAck = waitForAck;
@@ -86,7 +101,8 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
                     ActorSystem system = concreteProtocol.getActorSystem();
                     ActorRef messageProcessorRouter = system.actorOf(
                             new RoundRobinPool(concreteProtocol.getNumConsumers()).props(MessageProcessorActor
-                                    .props(concreteProtocol.getRequestStore(), ctx.coreComponents(), messageChecks)),
+                                    .props(concreteProtocol.getRequestStore(), ctx.coreComponents(), messageChecks,
+                                            concreteProtocol.getCorrelationHeaderName())),
                             "messageProcessorRouter-" + responseTopic);
                     ActorRef consumerRouter = system.actorOf(
                             new RoundRobinPool(concreteProtocol.getNumConsumers())
@@ -104,7 +120,7 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
 
                 return new KafkaRequestReplyAction(requestName, concreteProtocol, ctx.coreComponents(), next,
                         requestTopic, keyFunction,
-                        valueFunction, requestSerializationType, waitForAck, timeout, timeUnit);
+                        valueFunction, headers, requestSerializationType, waitForAck, timeout, timeUnit);
             }
         };
     }
@@ -124,6 +140,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
     private final String topic;
     private final Function<Session, String> key;
     private final Function<Session, Object> value;
+    private final java.util.Map<String, Function<Session, String>> headers;
     private final SerializationType serializationType;
     private final boolean waitForAck;
     private final long timeout;
@@ -133,7 +150,9 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
     public KafkaRequestReplyAction(String requestName, Protocol kafkaProtocol, CoreComponents coreComponents,
             Action next,
             String topic,
-            Function<Session, String> key, Function<Session, Object> value, SerializationType serializationType,
+            Function<Session, String> key, Function<Session, Object> value,
+            java.util.Map<String, Function<Session, String>> headers,
+            SerializationType serializationType,
             boolean waitForAck, long timeout,
             TimeUnit timeUnit) {
         this.requestName = requestName;
@@ -143,6 +162,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         this.topic = topic;
         this.key = key;
         this.value = value;
+        this.headers = headers;
         this.serializationType = serializationType;
         this.waitForAck = waitForAck;
         this.timeout = timeout;
@@ -168,8 +188,14 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         requestStore.storeRequest(correlationId, resolvedKey, valueObj, serializationType, requestName,
                 session.scenario(), startTime, timeUnit.toMillis(timeout));
 
+        java.util.Map<String, String> resolvedHeaders = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, Function<Session, String>> entry : headers.entrySet()) {
+            resolvedHeaders.put(entry.getKey(), entry.getValue().apply(new Session(session)));
+        }
+
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
-                topic, resolvedKey, valueObj, correlationId, waitForAck);
+                topic, resolvedKey, valueObj, correlationId, resolvedHeaders,
+                ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getCorrelationHeaderName(), waitForAck);
 
         ActorRef producerRouter = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getProducerRouter();
 
