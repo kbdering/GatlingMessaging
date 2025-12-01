@@ -61,7 +61,8 @@ public class MockKafkaRequestReplyIntegrationTest {
         Clock clock = () -> System.currentTimeMillis();
         List<MessageCheck<?, ?>> checks = Collections.emptyList();
         CorrelationExtractor correlationExtractor = null; // Use default header extraction
-        processor = new MessageProcessor(requestStore, stubStatsEngine, clock, checks, correlationExtractor);
+        processor = new MessageProcessor(requestStore, stubStatsEngine, clock, checks, correlationExtractor,
+                "correlationId");
 
         // Setup mock consumer with topic partition
         TopicPartition partition = new TopicPartition("response-topic", 0);
@@ -92,7 +93,8 @@ public class MockKafkaRequestReplyIntegrationTest {
         // 1. Create producer actor and send request
         ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer));
         producerActor.tell(
-                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, true),
+                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, null,
+                        "correlationId", true),
                 probe.getRef());
 
         Thread.sleep(100); // Give actor time to process
@@ -139,7 +141,7 @@ public class MockKafkaRequestReplyIntegrationTest {
         for (String corrId : correlationIds) {
             producerActor.tell(
                     new KafkaProducerActor.ProduceMessage("request-topic", "key-" + corrId,
-                            ("value-" + corrId).getBytes(), corrId, true),
+                            ("value-" + corrId).getBytes(), corrId, null, "correlationId", true),
                     probe.getRef());
             requestStore.storeRequest(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
                     SerializationType.STRING, "Req-" + corrId, "Scenario", System.currentTimeMillis(), 30000);

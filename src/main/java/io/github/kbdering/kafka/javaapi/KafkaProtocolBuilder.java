@@ -66,6 +66,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private String correlationHeaderName = "correlationId";
+
+    public KafkaProtocolBuilder correlationHeaderName(String name) {
+        this.correlationHeaderName = name;
+        return this;
+    }
+
     public KafkaProtocolBuilder bootstrapServers(String servers) {
         this.bootstrapServers = servers;
         return this;
@@ -93,6 +100,11 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
     public KafkaProtocolBuilder producerProperties(Map<String, Object> props) {
         producerProperties.putAll(props);
+        return this;
+    }
+
+    public KafkaProtocolBuilder producer(org.apache.kafka.clients.producer.MockProducer<String, Object> mockProducer) {
+        producerProperties.put("mockProducer", mockProducer);
         return this;
     }
 
@@ -138,12 +150,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final CorrelationExtractor correlationExtractor;
         private final Duration pollTimeout;
         private final Duration metricInjectionInterval;
+        private final String correlationHeaderName;
         private ActorRef producerRouter;
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
-                CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval) {
+                CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval,
+                String correlationHeaderName) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -153,6 +167,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.correlationExtractor = correlationExtractor;
             this.pollTimeout = pollTimeout;
             this.metricInjectionInterval = metricInjectionInterval;
+            this.correlationHeaderName = correlationHeaderName;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -189,6 +204,10 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
         public Duration getMetricInjectionInterval() {
             return metricInjectionInterval;
+        }
+
+        public String getCorrelationHeaderName() {
+            return correlationHeaderName;
         }
 
         public ActorRef getProducerRouter() {
@@ -403,6 +422,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 requestStore,
                 correlationExtractor,
                 pollTimeout,
-                metricInjectionInterval);
+                metricInjectionInterval,
+                correlationHeaderName);
     }
 }
