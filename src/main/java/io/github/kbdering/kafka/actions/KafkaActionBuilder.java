@@ -36,6 +36,7 @@ public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.cor
     private final String topic;
     private final Function<Session, String> key;
     private final Function<Session, String> value;
+    private final java.util.Map<String, Function<Session, String>> headers;
     private final Protocol kafkaProtocol; // Use the interface
 
     private final boolean waitForAck;
@@ -44,18 +45,21 @@ public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.cor
 
     public KafkaActionBuilder(String requestName, String topic, Function<Session, String> key,
             Function<Session, String> value,
+            java.util.Map<String, Function<Session, String>> headers,
             Protocol kafkaProtocol) { // Use interface
-        this(requestName, topic, key, value, kafkaProtocol, true, 30, TimeUnit.SECONDS);
+        this(requestName, topic, key, value, headers, kafkaProtocol, true, 30, TimeUnit.SECONDS);
     }
 
     public KafkaActionBuilder(String requestName, String topic, Function<Session, String> key,
             Function<Session, String> value,
+            java.util.Map<String, Function<Session, String>> headers,
             Protocol kafkaProtocol, // Use interface
             boolean waitForAck, long timeout, TimeUnit timeUnit) {
         this.requestName = requestName != null ? requestName : "Kafka Request";
         this.topic = Objects.requireNonNull(topic, "topic must not be null");
         this.key = Objects.requireNonNull(key, "key must not be null");
         this.value = Objects.requireNonNull(value, "value must not be null");
+        this.headers = headers != null ? headers : java.util.Collections.emptyMap();
         this.kafkaProtocol = kafkaProtocol; // Store the Protocol instance
         this.waitForAck = waitForAck;
         this.timeout = timeout;
@@ -65,11 +69,13 @@ public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.cor
 
     public KafkaActionBuilder(String requestName, String topic, Function<Session, String> key,
             Function<Session, String> value,
+            java.util.Map<String, Function<Session, String>> headers,
             boolean waitForAck, long timeout, TimeUnit timeUnit) {
         this.requestName = requestName != null ? requestName : "Kafka Request";
         this.topic = Objects.requireNonNull(topic, "topic must not be null");
         this.key = Objects.requireNonNull(key, "key must not be null");
         this.value = Objects.requireNonNull(value, "value must not be null");
+        this.headers = headers != null ? headers : java.util.Collections.emptyMap();
         this.kafkaProtocol = null; // No protocol provided
         this.waitForAck = waitForAck;
         this.timeout = timeout;
@@ -83,6 +89,7 @@ public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.cor
                         .protocol();
 
         return new KafkaSendAction(requestName, finalKafkaProtocol, ctx.coreComponents(), next, topic, key, value,
+                headers,
                 waitForAck,
                 timeout, timeUnit, ((KafkaProtocolBuilder.KafkaProtocol) finalKafkaProtocol).getProducerRouter());
     }
@@ -99,6 +106,7 @@ public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.cor
                 return new KafkaSendAction(KafkaActionBuilder.this.requestName, finalKafkaProtocol,
                         ctx.coreComponents(), next,
                         KafkaActionBuilder.this.topic, KafkaActionBuilder.this.key, KafkaActionBuilder.this.value,
+                        KafkaActionBuilder.this.headers,
                         KafkaActionBuilder.this.waitForAck, KafkaActionBuilder.this.timeout,
                         KafkaActionBuilder.this.timeUnit,
                         ((KafkaProtocolBuilder.KafkaProtocol) finalKafkaProtocol).getProducerRouter());
@@ -121,15 +129,19 @@ class KafkaSendAction implements io.gatling.core.action.Action {
     private final String topic;
     private final Function<Session, String> key;
     private final Function<Session, String> value;
+    private final java.util.Map<String, Function<Session, String>> headers;
     private final boolean waitForAck;
     private final long timeout;
     private final TimeUnit timeUnit;
 
     private final ActorRef producerRouter;
+    private final String correlationHeaderName;
 
     public KafkaSendAction(String requestName, Protocol kafkaProtocol, CoreComponents coreComponents, Action next,
             String topic,
-            Function<Session, String> key, Function<Session, String> value, boolean waitForAck, long timeout,
+            Function<Session, String> key, Function<Session, String> value,
+            java.util.Map<String, Function<Session, String>> headers,
+            boolean waitForAck, long timeout,
             TimeUnit timeUnit, ActorRef producerRouter) {
         this.requestName = requestName;
         this.next = next;
@@ -137,10 +149,12 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         this.topic = topic;
         this.key = key;
         this.value = value;
+        this.headers = headers;
         this.waitForAck = waitForAck;
         this.timeout = timeout;
         this.timeUnit = timeUnit;
         this.producerRouter = producerRouter;
+        this.correlationHeaderName = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getCorrelationHeaderName();
     }
 
     @Override
@@ -166,6 +180,11 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         String resolvedValue = value.apply(new Session(session));
         byte[] valueBytes = resolvedValue != null ? resolvedValue.getBytes(StandardCharsets.UTF_8) : null;
 
+        java.util.Map<String, String> resolvedHeaders = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, Function<Session, String>> entry : headers.entrySet()) {
+            resolvedHeaders.put(entry.getKey(), entry.getValue().apply(new Session(session)));
+        }
+
         // Use the correlationId as key if available, or generate one?
         // The original code didn't use correlationId for fire-and-forget, but the actor
         // expects one.
@@ -174,7 +193,7 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         String correlationId = resolvedKey != null ? resolvedKey : java.util.UUID.randomUUID().toString();
 
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
-                topic, resolvedKey, valueBytes, correlationId, waitForAck);
+                topic, resolvedKey, valueBytes, correlationId, resolvedHeaders, correlationHeaderName, waitForAck);
 
         long startTime = coreComponents.clock().nowMillis();
 

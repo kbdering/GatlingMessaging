@@ -24,14 +24,16 @@ public class MessageProcessor {
     private final Clock clock;
     private final List<MessageCheck<?, ?>> checks;
     private final CorrelationExtractor correlationExtractor;
+    private final String correlationHeaderName;
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
-            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor) {
+            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName) {
         this.requestStore = requestStore;
         this.statsEngine = statsEngine;
         this.clock = clock;
         this.checks = checks;
         this.correlationExtractor = correlationExtractor;
+        this.correlationHeaderName = correlationHeaderName;
     }
 
     public void process(List<ConsumerRecord<String, Object>> records) {
@@ -45,7 +47,7 @@ public class MessageProcessor {
             // Try to extract from headers first (default strategy)
             if (record.headers() != null) {
                 for (org.apache.kafka.common.header.Header header : record.headers()) {
-                    if ("correlationId".equals(header.key())) {
+                    if (correlationHeaderName.equals(header.key())) {
                         correlationId = new String(header.value(), StandardCharsets.UTF_8);
                         break;
                     }

@@ -100,7 +100,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.emptyList(), null);
+                Collections.emptyList(), null, "correlationId");
 
         // Prepare input record
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
@@ -128,7 +128,7 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), null);
+        }, Collections.emptyList(), null, "correlationId");
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", "unknown-id".getBytes(StandardCharsets.UTF_8)));
@@ -155,7 +155,7 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), null);
+        }, Collections.emptyList(), null, "correlationId");
 
         // Record with missing correlationId header
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
@@ -226,7 +226,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(stringCheck), null);
+                Collections.singletonList(stringCheck), null, "correlationId");
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -296,7 +296,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(bytesCheck), null);
+                Collections.singletonList(bytesCheck), null, "correlationId");
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key",
                 (Object) new byte[] { 4, 5, 6 });
@@ -364,7 +364,7 @@ public class MessageProcessorActorTest {
                 (req, res) -> Optional.of("Intentional failure"));
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(failCheck), null);
+                Collections.singletonList(failCheck), null, "correlationId");
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -435,7 +435,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(specialCheck), null);
+                Collections.singletonList(specialCheck), null, "correlationId");
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) specialString);
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -512,7 +512,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(encodingCheck), null);
+                Collections.singletonList(encodingCheck), null, "correlationId");
 
         // Send response encoded in UTF-16, but processor expects UTF-8 (default for
         // STRING)
@@ -588,7 +588,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(malformedCheck), null);
+                Collections.singletonList(malformedCheck), null, "correlationId");
 
         // Invalid UTF-8 bytes
         byte[] malformedBytes = new byte[] { (byte) 0xFF, (byte) 0xFF };

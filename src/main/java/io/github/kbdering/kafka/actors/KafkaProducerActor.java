@@ -20,13 +20,22 @@ public class KafkaProducerActor extends AbstractActor {
         public final String key;
         public final Object value;
         public final String correlationId;
+        public final Map<String, String> headers;
+        public final String correlationHeaderName;
         public final boolean waitForAck;
 
         public ProduceMessage(String topic, String key, Object value, String correlationId, boolean waitForAck) {
+            this(topic, key, value, correlationId, java.util.Collections.emptyMap(), "correlationId", waitForAck);
+        }
+
+        public ProduceMessage(String topic, String key, Object value, String correlationId, Map<String, String> headers,
+                String correlationHeaderName, boolean waitForAck) {
             this.topic = topic;
             this.key = key;
             this.value = value;
             this.correlationId = correlationId;
+            this.headers = headers;
+            this.correlationHeaderName = correlationHeaderName;
             this.waitForAck = waitForAck;
         }
     }
@@ -66,8 +75,17 @@ public class KafkaProducerActor extends AbstractActor {
         logger.debug("Received ProduceMessage: topic={}, key={}, value={}, waitForAck={}", message.topic, message.key,
                 message.value, message.waitForAck);
         ProducerRecord<String, Object> record = new ProducerRecord<>(message.topic, message.key, message.value);
+
         if (message.correlationId != null) {
-            record.headers().add("correlationId", message.correlationId.getBytes());
+            record.headers().add(message.correlationHeaderName, message.correlationId.getBytes());
+        }
+
+        if (message.headers != null) {
+            for (Map.Entry<String, String> entry : message.headers.entrySet()) {
+                if (entry.getValue() != null) {
+                    record.headers().add(entry.getKey(), entry.getValue().getBytes());
+                }
+            }
         }
 
         final org.apache.pekko.actor.ActorRef replyTo = getSender();

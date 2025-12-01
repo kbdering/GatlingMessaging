@@ -104,7 +104,7 @@ public class KafkaDsl {
         public static KafkaActionBuilder kafka(String topic, String key, String value) {
                 return new KafkaActionBuilder(null, topic,
                                 toJavaFunction(key),
-                                toJavaFunction(value), null);
+                                toJavaFunction(value), null, null);
         }
 
         /**
@@ -120,7 +120,7 @@ public class KafkaDsl {
         public static KafkaActionBuilder kafka(String requestName, String topic, String key, String value) {
                 return new KafkaActionBuilder(requestName, topic,
                                 toJavaFunction(key),
-                                toJavaFunction(value), null);
+                                toJavaFunction(value), null, null);
         }
 
         /**
@@ -182,7 +182,7 @@ public class KafkaDsl {
          */
         public static KafkaActionBuilder kafka(String topic, java.util.function.Function<Session, String> keyFunction,
                         java.util.function.Function<Session, String> valueFunction) {
-                return new KafkaActionBuilder(null, topic, keyFunction, valueFunction, null);
+                return new KafkaActionBuilder(null, topic, keyFunction, valueFunction, null, null);
         }
 
         /**
@@ -201,7 +201,7 @@ public class KafkaDsl {
         public static KafkaActionBuilder kafka(String requestName, String topic,
                         java.util.function.Function<Session, String> keyFunction,
                         java.util.function.Function<Session, String> valueFunction) {
-                return new KafkaActionBuilder(requestName, topic, keyFunction, valueFunction, null);
+                return new KafkaActionBuilder(requestName, topic, keyFunction, valueFunction, null, null);
         }
 
         /**
@@ -370,6 +370,49 @@ public class KafkaDsl {
                         long timeout, TimeUnit timeUnit) {
                 return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
                                 valueFunction,
+                                requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
+        }
+
+        /**
+         * Creates a KafkaActionBuilder for sending messages, using lambdas (Session ->
+         * String)
+         * for dynamic keys and values with a custom request name and headers.
+         *
+         * @param requestName   The name of the request.
+         * @param topic         The target Kafka topic.
+         * @param keyFunction   A function that takes a Gatling Session and returns the
+         *                      message key.
+         * @param valueFunction A function that takes a Gatling Session and returns the
+         *                      message value.
+         * @param headers       A map of header names to functions that resolve header
+         *                      values from the session.
+         * @param waitForAck    boolean that defines if it is necessary to wait for
+         *                      acknowledgement.
+         * @param timeout       timeout value.
+         * @param timeUnit      timeout unit.
+         * @return A KafkaActionBuilder.
+         */
+        public static KafkaActionBuilder kafka(String requestName, String topic,
+                        java.util.function.Function<Session, String> keyFunction,
+                        java.util.function.Function<Session, String> valueFunction,
+                        java.util.Map<String, java.util.function.Function<Session, String>> headers,
+                        boolean waitForAck, long timeout, TimeUnit timeUnit) {
+                return new KafkaActionBuilder(requestName, topic, keyFunction, valueFunction, headers, waitForAck,
+                                timeout,
+                                timeUnit);
+        }
+
+        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+                        String responseTopic,
+                        Function<Session, String> keyFunction,
+                        Function<Session, Object> valueFunction,
+                        java.util.Map<String, java.util.function.Function<Session, String>> headers,
+                        SerializationType requestSerializationType,
+                        List<MessageCheck<?, ?>> messageChecks,
+                        boolean waitForAck,
+                        long timeout, TimeUnit timeUnit) {
+                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
+                                valueFunction, headers,
                                 requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
         }
 
