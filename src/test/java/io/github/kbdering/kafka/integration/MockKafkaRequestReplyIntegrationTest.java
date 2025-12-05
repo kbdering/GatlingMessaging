@@ -62,7 +62,7 @@ public class MockKafkaRequestReplyIntegrationTest {
         List<MessageCheck<?, ?>> checks = Collections.emptyList();
         CorrelationExtractor correlationExtractor = null; // Use default header extraction
         processor = new MessageProcessor(requestStore, stubStatsEngine, clock, checks, correlationExtractor,
-                "correlationId");
+                "correlationId", false);
 
         // Setup mock consumer with topic partition
         TopicPartition partition = new TopicPartition("response-topic", 0);

@@ -14,7 +14,6 @@ import scala.concurrent.Future;
 import scala.collection.immutable.List$;
 
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public class KafkaConsumeAction implements Action {
 
