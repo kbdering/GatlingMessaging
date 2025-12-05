@@ -132,6 +132,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private String transactionalId = null;
+
+    public KafkaProtocolBuilder transactionalId(String transactionalId) {
+        this.transactionalId = transactionalId;
+        return this;
+    }
+
     @Override
     public Protocol protocol() {
         return build();
@@ -165,7 +172,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
                 CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval,
-                String correlationHeaderName, boolean useTimestampHeader) {
+                String correlationHeaderName, boolean useTimestampHeader, String transactionalId) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -177,6 +184,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.metricInjectionInterval = metricInjectionInterval;
             this.correlationHeaderName = correlationHeaderName;
             this.useTimestampHeader = useTimestampHeader;
+            this.transactionalId = transactionalId;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -223,6 +231,12 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             return useTimestampHeader;
         }
 
+        private final String transactionalId;
+
+        public String getTransactionalId() {
+            return transactionalId;
+        }
+
         public ActorRef getProducerRouter() {
             return producerRouter;
         }
@@ -257,13 +271,30 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public KafkaProtocolComponents(KafkaProtocol kafkaProtocol, CoreComponents coreComponents) {
             this.kafkaProtocol = kafkaProtocol;
             this.coreComponents = coreComponents;
+            String componentId = coreComponents != null ? coreComponents.toString() : "test";
             if (kafkaProtocol.getProducerRouter() == null) {
-                ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
-                        new RoundRobinPool(kafkaProtocol.getNumProducers())
-                                .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
-                        "kafkaProducerRouter-" + coreComponents.toString());
-                kafkaProtocol.setProducerRouter(producerRouter);
-                kafkaProtocol.setProducerRouter(producerRouter);
+                if (kafkaProtocol.getTransactionalId() != null) {
+                    // Transactional producers must have unique IDs
+                    java.util.List<String> routeePaths = new java.util.ArrayList<>();
+                    for (int i = 0; i < kafkaProtocol.getNumProducers(); i++) {
+                        Map<String, Object> props = new HashMap<>(kafkaProtocol.getProducerProperties());
+                        props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, kafkaProtocol.getTransactionalId() + "-" + i);
+                        ActorRef producer = kafkaProtocol.getActorSystem().actorOf(
+                                KafkaProducerActor.props(props),
+                                "kafkaProducer-" + componentId + "-" + i);
+                        routeePaths.add(producer.path().toStringWithoutAddress());
+                    }
+                    ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
+                            new org.apache.pekko.routing.RoundRobinGroup(routeePaths).props(),
+                            "kafkaProducerRouter-" + componentId);
+                    kafkaProtocol.setProducerRouter(producerRouter);
+                } else {
+                    ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
+                            new RoundRobinPool(kafkaProtocol.getNumProducers())
+                                    .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
+                            "kafkaProducerRouter-" + componentId);
+                    kafkaProtocol.setProducerRouter(producerRouter);
+                }
             }
             System.out.println("DEBUG: KafkaProtocolComponents instantiated");
         }
@@ -437,6 +468,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 pollTimeout,
                 metricInjectionInterval,
                 correlationHeaderName,
-                useTimestampHeader);
+                useTimestampHeader,
+                transactionalId);
     }
 }

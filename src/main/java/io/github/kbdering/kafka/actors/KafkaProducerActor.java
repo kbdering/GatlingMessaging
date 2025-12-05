@@ -4,6 +4,9 @@ import org.apache.pekko.actor.AbstractActor;
 import org.apache.pekko.actor.Props;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.errors.OutOfOrderSequenceException;
+import org.apache.kafka.common.errors.AuthorizationException;
 
 import java.util.Map;
 
@@ -40,10 +43,18 @@ public class KafkaProducerActor extends AbstractActor {
         }
     }
 
+    private final boolean isTransactional;
+
     public KafkaProducerActor(Map<String, Object> producerProperties) {
         logger.info("Starting KafkaProducerActor with properties: {}", producerProperties);
+        this.isTransactional = producerProperties.containsKey(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
         try {
             this.producer = new KafkaProducer<>(producerProperties);
+            if (isTransactional) {
+                logger.info("Initializing Kafka transactions for producer: {}",
+                        producerProperties.get(ProducerConfig.TRANSACTIONAL_ID_CONFIG));
+                this.producer.initTransactions();
+            }
         } catch (KafkaException e) {
             logger.error("Failed to create Kafka Producer. Check your bootstrap.servers configuration.", e);
             throw e;
@@ -53,6 +64,7 @@ public class KafkaProducerActor extends AbstractActor {
     // Visible for testing
     public KafkaProducerActor(Producer<String, Object> producer) {
         this.producer = producer;
+        this.isTransactional = false;
     }
 
     public static Props props(Map<String, Object> producerProperties) {
@@ -90,7 +102,38 @@ public class KafkaProducerActor extends AbstractActor {
 
         final org.apache.pekko.actor.ActorRef replyTo = getSender();
 
-        if (message.waitForAck) {
+        if (isTransactional) {
+            try {
+                producer.beginTransaction();
+                producer.send(record);
+                producer.commitTransaction();
+                // For transactional, we assume success if commit succeeds.
+                // We can't get RecordMetadata easily without a callback, but commit guarantees
+                // persistence.
+                // We could use a callback to get metadata but commit is the barrier.
+                // Let's use a callback to capture metadata, but we must be careful.
+                // Actually, send() returns a Future.
+                // But we are in an actor, we shouldn't block... wait, commitTransaction IS
+                // blocking.
+                // So we are already blocking.
+                // Let's just return a success message.
+                replyTo.tell("Message sent (transactional)", getSelf());
+            } catch (ProducerFencedException | org.apache.kafka.common.errors.OutOfOrderSequenceException
+                    | org.apache.kafka.common.errors.AuthorizationException e) {
+                // We can't recover from these exceptions, so we close the producer and rethrow
+                producer.close();
+                replyTo.tell(new org.apache.pekko.actor.Status.Failure(e), getSelf());
+                throw e;
+            } catch (KafkaException e) {
+                // For all other exceptions, abort the transaction and try to retry?
+                // The actor will restart if we throw.
+                producer.abortTransaction();
+                replyTo.tell(new org.apache.pekko.actor.Status.Failure(e), getSelf());
+                // We don't rethrow here to avoid restarting the actor for transient errors?
+                // Actually, if we abort, we are ready for next transaction.
+                logger.error("Transaction aborted", e);
+            }
+        } else if (message.waitForAck) {
             producer.send(record, (metadata, exception) -> {
                 if (exception != null) {
                     replyTo.tell(new org.apache.pekko.actor.Status.Failure(exception), getSelf());
