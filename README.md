@@ -348,6 +348,35 @@ Proper configuration is critical for high-performance Kafka load testing.
     *   **`1`**: Leader acknowledgement (faster).
     *   **`0`**: Fire and forget (fastest, no guarantees).
 
+### Idempotent Producers
+
+To ensure that messages are delivered exactly once per partition (preventing duplicates due to retries), enable idempotence. This is often a prerequisite for transactional producers but can be used independently.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .producerProperties(Map.of(
+        ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true",
+        ProducerConfig.ACKS_CONFIG, "all", // Required for idempotence
+        ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE.toString()
+    ));
+```
+
+### Transactional Producers (Exactly-Once Semantics)
+
+To enable transactional support (Exactly-Once Semantics), configure a `transactionalId`.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .transactionalId("my-transactional-id") // Enables transactions
+    .numProducers(4); // Each producer gets a unique ID: my-transactional-id-0, my-transactional-id-1, etc.
+```
+
+**Key Behaviors:**
+*   **Atomic Writes**: Messages are written to the topic atomically. Consumers with `isolation.level=read_committed` will only see committed messages.
+*   **Blocking Commit**: The producer will block to commit the transaction after each message (or batch). This ensures data integrity but may impact throughput.
+*   **Unique IDs**: When `numProducers > 1`, the extension automatically appends a suffix (`-0`, `-1`, etc.) to the `transactionalId` to ensure each producer instance has a unique ID, preventing "Fenced Producer" errors.
+
 ### Consumer Configuration
 
 *   **`numConsumers(int)`**:
@@ -356,6 +385,20 @@ Proper configuration is critical for high-performance Kafka load testing.
     *   **Best Practice**: Set this equal to the number of **partitions** of your response topic. Having more consumers than partitions is wasteful (idle threads).
 *   **`fetch.min.bytes`**:
     *   **Best Practice**: Increase (e.g., `1024`) to reduce the number of fetch requests if you can tolerate slight latency.
+
+### Consumer Isolation Level
+
+When consuming from topics that contain transactional messages, you must decide whether to see all messages (including aborted transactions) or only committed ones.
+
+*   **`read_uncommitted`** (Default): Consumers see all messages, including those from aborted transactions.
+*   **`read_committed`**: Consumers only see messages from committed transactions. This is essential for Exactly-Once Semantics.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .consumerProperties(Map.of(
+        ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed"
+    ));
+```
 
 ### Example Optimized Configuration
 
