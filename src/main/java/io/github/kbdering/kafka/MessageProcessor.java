@@ -25,19 +25,22 @@ public class MessageProcessor {
     private final List<MessageCheck<?, ?>> checks;
     private final CorrelationExtractor correlationExtractor;
     private final String correlationHeaderName;
+    private final boolean useTimestampHeader;
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
-            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName) {
+            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
+            boolean useTimestampHeader) {
         this.requestStore = requestStore;
         this.statsEngine = statsEngine;
         this.clock = clock;
         this.checks = checks;
         this.correlationExtractor = correlationExtractor;
         this.correlationHeaderName = correlationHeaderName;
+        this.useTimestampHeader = useTimestampHeader;
     }
 
     public void process(List<ConsumerRecord<String, Object>> records) {
-        long endTime = clock.nowMillis();
+        long defaultEndTime = clock.nowMillis();
 
         // 1. Extract correlation IDs and map them to records
         Map<String, Object> correlationIdToValue = new HashMap<>();
@@ -60,7 +63,15 @@ public class MessageProcessor {
             }
 
             if (correlationId != null) {
-                correlationIdToValue.put(correlationId, record.value());
+                // If using timestamp header, we need to pass the whole record to access the
+                // timestamp later
+                // Otherwise, we just pass the value as before (though passing record is safe
+                // too as long as we handle it)
+                if (useTimestampHeader) {
+                    correlationIdToValue.put(correlationId, record);
+                } else {
+                    correlationIdToValue.put(correlationId, record.value());
+                }
             }
         }
 
@@ -71,6 +82,15 @@ public class MessageProcessor {
                 long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
                 String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
                 String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
+
+                long endTime = defaultEndTime;
+                Object actualResponseValue = responseValue;
+
+                if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
+                    ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
+                    endTime = record.timestamp();
+                    actualResponseValue = record.value();
+                }
 
                 // Default to OK
                 Status status = Status.apply("OK");
@@ -97,18 +117,18 @@ public class MessageProcessor {
                             Object response = null;
                             if (check
                                     .getResponseSerdeType() == io.github.kbdering.kafka.util.SerializationType.STRING) {
-                                if (responseValue instanceof byte[]) {
-                                    response = new String((byte[]) responseValue, StandardCharsets.UTF_8);
+                                if (actualResponseValue instanceof byte[]) {
+                                    response = new String((byte[]) actualResponseValue, StandardCharsets.UTF_8);
                                 } else {
-                                    response = responseValue.toString();
+                                    response = actualResponseValue.toString();
                                 }
                             } else if (check
                                     .getResponseSerdeType() == io.github.kbdering.kafka.util.SerializationType.BYTE_ARRAY) {
-                                if (responseValue instanceof byte[]) {
-                                    response = responseValue;
+                                if (actualResponseValue instanceof byte[]) {
+                                    response = actualResponseValue;
                                 } else {
                                     // Fallback or error? For now, toString bytes
-                                    response = responseValue.toString().getBytes(StandardCharsets.UTF_8);
+                                    response = actualResponseValue.toString().getBytes(StandardCharsets.UTF_8);
                                 }
                             }
 
@@ -147,12 +167,26 @@ public class MessageProcessor {
 
             @Override
             public void onUnmatched(String correlationId, Object responseValue) {
-                long startTime = endTime; // Default start time if lookup fails early
+                long startTime = defaultEndTime; // Default start time if lookup fails early
                 String transactionName = "Missing Match"; // Default transaction name
                 String scenarioName = "Unknown Scenario"; // Default scenario name
                 Status status = Status.apply("KO"); // Default status is failure
                 Option<String> errorMessage = Option.apply("Request data not found for correlationId");
                 Option<String> responseCode = Option.apply("404"); // Simulate Not Found
+
+                long endTime = defaultEndTime;
+                if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
+                    ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
+                    endTime = record.timestamp();
+                    // If we want to use the message timestamp as end time, we can.
+                    // But for unmatched, we don't have start time, so duration is 0 or undefined.
+                    // Let's keep it simple and use clock for unmatched or maybe use timestamp for
+                    // both start and end?
+                    // If we use timestamp for end, and clock for start, it might be weird.
+                    // But here startTime is set to endTime (defaultEndTime).
+                    startTime = endTime;
+                }
+
                 statsEngine.logResponse(
                         scenarioName,
                         List$.MODULE$.empty(),

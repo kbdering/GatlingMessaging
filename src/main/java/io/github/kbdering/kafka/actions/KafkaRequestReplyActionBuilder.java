@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.stats.StatsEngine;
-import java.nio.charset.StandardCharsets;
+
 import io.github.kbdering.kafka.cache.RequestStore;
 import io.github.kbdering.kafka.util.SerializationType;
 import io.github.kbdering.kafka.MessageCheck;
@@ -28,6 +28,7 @@ import io.github.kbdering.kafka.actors.MessageProcessorActor;
 import io.github.kbdering.kafka.actors.KafkaConsumerActor;
 import io.github.kbdering.kafka.actors.KafkaMessages;
 import io.github.kbdering.kafka.actors.KafkaProducerActor;
+import io.github.kbdering.kafka.extractors.CorrelationExtractor;
 
 import org.apache.pekko.pattern.Patterns;
 import org.apache.pekko.util.Timeout;
@@ -102,7 +103,9 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
                     ActorRef messageProcessorRouter = system.actorOf(
                             new RoundRobinPool(concreteProtocol.getNumConsumers()).props(MessageProcessorActor
                                     .props(concreteProtocol.getRequestStore(), ctx.coreComponents(), messageChecks,
-                                            concreteProtocol.getCorrelationHeaderName())),
+                                            concreteProtocol.getCorrelationExtractor(),
+                                            concreteProtocol.getCorrelationHeaderName(),
+                                            concreteProtocol.isUseTimestampHeader())),
                             "messageProcessorRouter-" + responseTopic);
                     ActorRef consumerRouter = system.actorOf(
                             new RoundRobinPool(concreteProtocol.getNumConsumers())

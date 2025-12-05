@@ -46,6 +46,7 @@ public class MessageProcessorActorTest {
 
         // Manual Stub for Clock
         Clock stubClock = new Clock() {
+
             @Override
             public long nowMillis() {
                 return endTime;
@@ -59,7 +60,8 @@ public class MessageProcessorActorTest {
                 (proxy, method, args) -> {
                     if (method.getName().equals("logResponse")) {
                         // logResponse(String scenario, List<String> groups, String name, long start,
-                        // long end, Status status, Option<String> responseCode, Option<String> message)
+                        // long end, Status status, Option<String> responseCode, Option<String>
+                        // message)
                         String scenario = (String) args[0];
                         String name = (String) args[2];
                         long start = (long) args[3];
@@ -100,11 +102,15 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.emptyList(), null, "correlationId");
+                Collections.emptyList(),
+                (io.github.kbdering.kafka.extractors.CorrelationExtractor) null,
+                "correlationId", false);
 
         // Prepare input record
-        ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
-        record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
+        ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0,
+                "key", (Object) "response");
+        record.headers().add(new RecordHeader("correlationId",
+                correlationId.getBytes(StandardCharsets.UTF_8)));
 
         // Execute
         processor.process(Collections.singletonList(record));
@@ -128,7 +134,8 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), null, "correlationId");
+        }, Collections.emptyList(), (io.github.kbdering.kafka.extractors.CorrelationExtractor) null, "correlationId",
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", "unknown-id".getBytes(StandardCharsets.UTF_8)));
@@ -155,7 +162,8 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), null, "correlationId");
+        }, Collections.emptyList(), (io.github.kbdering.kafka.extractors.CorrelationExtractor) null, "correlationId",
+                false);
 
         // Record with missing correlationId header
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
@@ -226,7 +234,8 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(stringCheck), null, "correlationId");
+                Collections.singletonList(stringCheck), (io.github.kbdering.kafka.extractors.CorrelationExtractor) null,
+                "correlationId", false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -296,7 +305,8 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(bytesCheck), null, "correlationId");
+                Collections.singletonList(bytesCheck), (io.github.kbdering.kafka.extractors.CorrelationExtractor) null,
+                "correlationId", false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key",
                 (Object) new byte[] { 4, 5, 6 });
@@ -364,7 +374,8 @@ public class MessageProcessorActorTest {
                 (req, res) -> Optional.of("Intentional failure"));
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(failCheck), null, "correlationId");
+                Collections.singletonList(failCheck), (io.github.kbdering.kafka.extractors.CorrelationExtractor) null,
+                "correlationId", false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -435,7 +446,8 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(specialCheck), null, "correlationId");
+                Collections.singletonList(specialCheck),
+                (io.github.kbdering.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) specialString);
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -512,7 +524,8 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(encodingCheck), null, "correlationId");
+                Collections.singletonList(encodingCheck),
+                (io.github.kbdering.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
         // Send response encoded in UTF-16, but processor expects UTF-8 (default for
         // STRING)
@@ -588,7 +601,8 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
-                Collections.singletonList(malformedCheck), null, "correlationId");
+                Collections.singletonList(malformedCheck),
+                (io.github.kbdering.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
         // Invalid UTF-8 bytes
         byte[] malformedBytes = new byte[] { (byte) 0xFF, (byte) 0xFF };
