@@ -125,6 +125,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private boolean useTimestampHeader = false;
+
+    public KafkaProtocolBuilder useTimestampHeader(boolean useTimestampHeader) {
+        this.useTimestampHeader = useTimestampHeader;
+        return this;
+    }
+
     @Override
     public Protocol protocol() {
         return build();
@@ -151,13 +158,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final Duration pollTimeout;
         private final Duration metricInjectionInterval;
         private final String correlationHeaderName;
+        private final boolean useTimestampHeader;
         private ActorRef producerRouter;
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
                 CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval,
-                String correlationHeaderName) {
+                String correlationHeaderName, boolean useTimestampHeader) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -168,6 +176,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.pollTimeout = pollTimeout;
             this.metricInjectionInterval = metricInjectionInterval;
             this.correlationHeaderName = correlationHeaderName;
+            this.useTimestampHeader = useTimestampHeader;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -208,6 +217,10 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
         public String getCorrelationHeaderName() {
             return correlationHeaderName;
+        }
+
+        public boolean isUseTimestampHeader() {
+            return useTimestampHeader;
         }
 
         public ActorRef getProducerRouter() {
@@ -423,6 +436,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 correlationExtractor,
                 pollTimeout,
                 metricInjectionInterval,
-                correlationHeaderName);
+                correlationHeaderName,
+                useTimestampHeader);
     }
 }

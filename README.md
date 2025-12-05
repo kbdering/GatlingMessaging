@@ -466,6 +466,17 @@ KafkaProtocolBuilder protocol = kafka()
     .bootstrapServers("localhost:9092")
     .correlationHeaderName("X-Request-ID") // Use custom header for correlation
     // ... other config
+
+### Timestamp Extraction
+
+By default, the extension uses the system clock to measure the end time of a transaction. However, you can configure it to use the timestamp from the Kafka message header instead. This is useful when you want to measure the time until the message was produced to the response topic, rather than when it was consumed by Gatling.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .useTimestampHeader(true) // Use Kafka message timestamp as end time
+    // ... other config
+```
 ```
 
 ## Schema Registry Support (Avro & Protobuf)
