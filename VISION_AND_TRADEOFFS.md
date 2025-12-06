@@ -25,6 +25,14 @@ This framework adopts a **"Reference Monitor"** architecture. It acts as an inde
     *   We do not attempt to "fail open" or "guess".
     *   If the ledger is compromised, the measurement is compromised. The test must be halted and repeated.
     *   *Justification:* You cannot audit a bank if the auditor's notebook is on fire.
+    *   *Justification:* You cannot audit a bank if the auditor's notebook is on fire.
+
+### Contextual Verification: The "Wrong Customer Data" Zero-Tolerance Policy
+
+We enforce strict checks not just on the *presence* of a response, but on its *content* relative to the request.
+
+*   **The Problem:** High-concurrency systems often suffer from race conditions or cache collisions where User A sees User B's data. A simple "200 OK" check misses this catastrophe.
+*   **The Solution:** The framework allows (and encourages) deep inspection of the response payload against the *original request state* stored in the Request Store. We verify that the response isn't just "valid JSON", but that it is the *exact* answer to the specific question asked by this specific Virtual User.
 
 ---
 
