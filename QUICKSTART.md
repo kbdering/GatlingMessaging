@@ -1,6 +1,5 @@
 # 🚀 Gatling Kafka Extension - Quick Reference
 
-## Enterprise Rating: 8.8/10 🏆
 
 ### What's New (2025-11-30)
 - ✅ Docker Compose with TLS-enabled Kafka
