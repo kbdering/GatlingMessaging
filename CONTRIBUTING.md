@@ -14,6 +14,7 @@ To maintain the architectural integrity and the specific "Resilience First" visi
 
 ## Customization & Consulting
 
-If you require specific customizations, support for proprietary protocols, or integration with your enterprise environment, I am available for consulting.
+If you require specific customizations, support for proprietary protocols, or integration with your enterprise environment, I am available for consulting. 
+The modular design of this framework allows for easy extension and customization including adoption of MQ protocols. 
 
 Please contact me directly at: **kuba@perfluencer.pl**
