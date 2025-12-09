@@ -176,7 +176,99 @@ You can send custom headers with your Kafka messages. This is useful for passing
 )
 ```
 
-## Request-Reply Pattern
+## Using Feeders for Data-Driven Testing
+
+Gatling feeders allow you to drive your Kafka tests with external data sources (CSV files, databases, or programmatically generated data). This is essential for realistic load testing with varied, production-like payloads.
+
+### CSV Feeder Example
+
+Create a CSV file at `src/test/resources/payment_data.csv`:
+
+```csv
+accountId,amount,currency,customerName
+ACC-001,1500.00,USD,John Smith
+ACC-002,2500.50,EUR,Jane Doe
+ACC-003,750.25,GBP,Bob Wilson
+```
+
+Use it in your simulation:
+
+```java
+import static io.gatling.javaapi.core.CoreDsl.*;
+
+public class PaymentSimulation extends Simulation {
+    {
+        // Load CSV feeder - circular() wraps around when exhausted
+        FeederBuilder<String> csvFeeder = csv("payment_data.csv").circular();
+        
+        ScenarioBuilder scn = scenario("Payment Processing")
+            .feed(csvFeeder)  // Inject data into each user's session
+            .exec(
+                KafkaDsl.kafkaRequestReply(
+                    "payment-requests",
+                    "payment-responses",
+                    session -> session.getString("accountId"),  // Key from CSV
+                    session -> String.format(
+                        "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\"}",
+                        session.getString("accountId"),
+                        session.getString("amount"),
+                        session.getString("currency")
+                    ),
+                    SerializationType.STRING,
+                    paymentChecks,
+                    10, TimeUnit.SECONDS
+                )
+            );
+        
+        setUp(scn.injectOpen(constantUsersPerSec(10).during(60)))
+            .protocols(kafkaProtocol);
+    }
+}
+```
+
+### Random Feeder Example
+
+Generate dynamic test data on-the-fly:
+
+```java
+FeederBuilder<Object> randomFeeder = Stream.of(
+    Map.of(
+        "randomAmount", () -> String.format("%.2f", Math.random() * 10000),
+        "randomAccountId", () -> "ACC-" + UUID.randomUUID().toString().substring(0, 8),
+        "timestamp", () -> String.valueOf(System.currentTimeMillis())
+    )
+).toFeeder();
+
+ScenarioBuilder scn = scenario("Dynamic Payments")
+    .feed(randomFeeder)
+    .exec(
+        KafkaDsl.kafkaRequestReply(
+            "payments",
+            "payment-responses",
+            session -> session.getString("randomAccountId"),
+            session -> String.format(
+                "{\"accountId\":\"%s\",\"amount\":%s,\"ts\":%s}",
+                session.getString("randomAccountId"),
+                session.getString("randomAmount"),
+                session.getString("timestamp")
+            ),
+            SerializationType.STRING,
+            checks,
+            10, TimeUnit.SECONDS
+        )
+    );
+```
+
+### Feeder Strategies
+
+| Strategy | Usage | Best For |
+|----------|-------|----------|
+| `.queue()` | Each record used once | Unique transactions |
+| `.circular()` | Wraps to start | Continuous load tests |
+| `.random()` | Random selection | Varied data patterns |
+| `.shuffle()` | Random order, once each | Unique + randomized |
+
+
 
 This is the core feature of the extension. It allows you to test systems that consume a message, process it, and send a reply to another topic.
 
