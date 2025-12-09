@@ -25,7 +25,6 @@ This framework adopts a **"Reference Monitor"** architecture. It acts as an inde
     *   We do not attempt to "fail open" or "guess".
     *   If the ledger is compromised, the measurement is compromised. The test must be halted and repeated.
     *   *Justification:* You cannot audit a bank if the auditor's notebook is on fire.
-    *   *Justification:* You cannot audit a bank if the auditor's notebook is on fire.
 
 ### Contextual Verification: The "Wrong Customer Data" Zero-Tolerance Policy
 
@@ -59,7 +58,6 @@ We have made deliberate, controversial design choices to support this vision. Be
 *   **Traditional View (Risk):** "Complex SQL, higher CPU load on the DB."
 *   **Resilience View (Benefit):**
     *   **Distributed Correctness:** This solves the **"Split Brain"** problem. Multiple Gatling nodes can race to match responses, but the database guarantees **Exactly-Once Matching**.
-    *   **Restartability:** If a Gatling node dies, another can pick up the work immediately without "double counting" transactions.
 
 ---
 
@@ -67,4 +65,4 @@ We have made deliberate, controversial design choices to support this vision. Be
 
 This framework is designed for **High-Value Verification**. It is the tool you use when you need to prove to a regulator or a CTO that the system handles money correctly under failure.
 
-However, it is **flexible**. While its default configuration prioritizes safety, it fully supports **Fire-and-Forget** modes where `acks=0` and `waitForAck=false`. In this mode, it acts as a highly efficient, actor-based load generator capable of saturating network bandwidth, similar to other tools. The power lies in the **choice**: you can have "Bank-Grade Auditing" for your payments flow and "Raw Throughput" for your logging flow, all within the same simulation.
+It is **flexible**. While its default configuration prioritizes safety, it fully supports **Fire-and-Forget** modes where `acks=0` and `waitForAck=false`. In this mode, it acts as a highly efficient, actor-based load generator capable of saturating network bandwidth, similar to other tools. The power lies in the **choice**: you can have "Bank-Grade Auditing" for your payments flow and "Raw Throughput" for your logging flow, all within the same simulation.
