@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package io.github.kbdering.kafka.proto;
+package pl.perfluencer.kafka.proto;
 
-option java_package = "io.github.kbdering.kafka.proto";
+option java_package = "pl.perfluencer.kafka.proto";
 option java_multiple_files = true;
 
 message DummyRequest {

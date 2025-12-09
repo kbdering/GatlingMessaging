@@ -61,7 +61,6 @@ We have made deliberate, controversial design choices to support this vision. Be
 
 ---
 
-## Conclusion
 
 This framework is designed for **High-Value Verification**. It is the tool you use when you need to prove to a regulator or a CTO that the system handles money correctly under failure.
 

@@ -34,14 +34,14 @@ A critical design goal is to measure the impact of system failures:
 Here is a complete example of a simulation that sends a Protobuf request and verifies the response.
 
 ```java
-package io.github.kbdering.kafka.simulations;
+package pl.perfluencer.kafka.simulations;
 
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
-import io.github.kbdering.kafka.javaapi.KafkaDsl;
-import io.github.kbdering.kafka.javaapi.KafkaProtocolBuilder;
-import io.github.kbdering.kafka.util.SerializationType;
-import io.github.kbdering.kafka.MessageCheck;
+import pl.perfluencer.kafka.javaapi.KafkaDsl;
+import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.kafka.MessageCheck;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import java.time.Duration;
 import java.util.Collections;
@@ -121,7 +121,7 @@ The `kafka` action allows you to send messages to a topic.
 By default, the action waits for the Kafka broker to acknowledge the message (`acks=all` recommended).
 
 ```java
-import static io.github.kbdering.kafka.javaapi.KafkaDsl.*;
+import static pl.perfluencer.kafka.javaapi.KafkaDsl.*;
 
 // ... inside your scenario
 .exec(

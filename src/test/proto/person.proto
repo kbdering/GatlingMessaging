@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package io.github.kbdering.kafka.protobuf;
+package pl.perfluencer.kafka.protobuf;
 
 option java_multiple_files = true;
-option java_package = "io.github.kbdering.kafka.protobuf";
+option java_package = "pl.perfluencer.kafka.protobuf";
 option java_outer_classname = "PersonProto";
 
 message Person {
