@@ -190,8 +190,20 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         // Store request for correlation
         RequestStore requestStore = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getRequestStore();
         try {
+            long storeStart = coreComponents.clock().nowMillis();
             requestStore.storeRequest(correlationId, resolvedKey, valueObj, serializationType, requestName,
                     session.scenario(), startTime, timeUnit.toMillis(timeout));
+            long storeEnd = coreComponents.clock().nowMillis();
+
+            statsEngine.logResponse(
+                    session.scenario(),
+                    session.groups(),
+                    requestName + " Store",
+                    storeStart,
+                    storeEnd,
+                    Status.apply("OK"),
+                    scala.Option.empty(),
+                    scala.Option.empty());
         } catch (Exception e) {
             logger.error("Failed to store request in RequestStore", e);
             session.markAsFailed();
@@ -211,7 +223,8 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
                 topic, resolvedKey, valueObj, correlationId, resolvedHeaders,
-                ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getCorrelationHeaderName(), waitForAck);
+                ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getCorrelationHeaderName(), waitForAck,
+                requestName, session.scenario(), session.groups());
 
         ActorRef producerRouter = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getProducerRouter();
 
@@ -237,10 +250,8 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                 handleFailure(session, statsEngine, startTime, endTime, exception, correlationId);
             } else {
                 if (response instanceof RecordMetadata) {
-                    // Log the SEND duration
-                    statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + "-Send", startTime,
-                            endTime, Status.apply("OK"),
-                            scala.Some.apply("200"), scala.Some.apply(""));
+                    // Log the SEND duration - Handled by KafkaProducerActor now
+                    // We just proceed
                     next.execute(session);
                 } else if (response instanceof org.apache.pekko.actor.Status.Failure) {
                     Throwable e = ((org.apache.pekko.actor.Status.Failure) response).cause();
@@ -260,7 +271,11 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         requestStore.deleteRequest(correlationId);
 
         session.markAsFailed();
-        statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + "-Send", startTime, endTime,
+        session.markAsFailed();
+        // Send failure logged by Actor or here?
+        // Detailed error logging might still be useful here for E2E transaction status
+        statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + " Send Failed", startTime,
+                endTime,
                 Status.apply("KO"),
                 scala.Some.apply("500"), scala.Some.apply("Send Failed: " + e.getMessage()));
         logger.error("Kafka Request-Reply Send failed", e);

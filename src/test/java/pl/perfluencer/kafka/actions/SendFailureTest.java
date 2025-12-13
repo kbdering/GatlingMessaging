@@ -46,8 +46,8 @@ public class SendFailureTest {
         when(kafkaProtocol.getRequestStore()).thenReturn(requestStore);
         when(kafkaProtocol.getCorrelationHeaderName()).thenReturn("correlationId");
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer));
-        when(kafkaProtocol.getProducerRouter()).thenReturn(producerActor);
+        ActorRef producerRouter = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
+        when(kafkaProtocol.getProducerRouter()).thenReturn(producerRouter);
 
         coreComponents = mock(CoreComponents.class);
         StatsEngine statsEngine = mock(StatsEngine.class);

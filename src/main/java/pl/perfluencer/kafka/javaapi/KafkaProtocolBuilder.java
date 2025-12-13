@@ -280,7 +280,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                         Map<String, Object> props = new HashMap<>(kafkaProtocol.getProducerProperties());
                         props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, kafkaProtocol.getTransactionalId() + "-" + i);
                         ActorRef producer = kafkaProtocol.getActorSystem().actorOf(
-                                KafkaProducerActor.props(props),
+                                KafkaProducerActor.props(props, coreComponents.statsEngine(), coreComponents.clock()),
                                 "kafkaProducer-" + componentId + "-" + i);
                         routeePaths.add(producer.path().toStringWithoutAddress());
                     }
@@ -291,7 +291,8 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 } else {
                     ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
                             new RoundRobinPool(kafkaProtocol.getNumProducers())
-                                    .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties())),
+                                    .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties(),
+                                            coreComponents.statsEngine(), coreComponents.clock())),
                             "kafkaProducerRouter-" + componentId);
                     kafkaProtocol.setProducerRouter(producerRouter);
                 }

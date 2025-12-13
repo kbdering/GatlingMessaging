@@ -12,6 +12,10 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import static org.mockito.Mockito.*;
+import io.gatling.core.stats.StatsEngine;
+import io.gatling.commons.util.Clock;
+import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 
@@ -38,8 +42,11 @@ public class KafkaProducerActorTest {
                 org.apache.kafka.common.serialization.Serializer<Object> valueSerializer = (org.apache.kafka.common.serialization.Serializer<Object>) (org.apache.kafka.common.serialization.Serializer<?>) new StringSerializer();
                 MockProducer<String, Object> producer = new MockProducer<>(true, new StringSerializer(),
                         valueSerializer);
+                StatsEngine statsEngine = mock(StatsEngine.class);
+                Clock clock = mock(Clock.class);
                 ActorRef actorRef = system.actorOf(KafkaProducerActor
-                        .props((org.apache.kafka.clients.producer.Producer<String, Object>) producer));
+                        .props((org.apache.kafka.clients.producer.Producer<String, Object>) producer, statsEngine,
+                                clock));
 
                 String topic = "test-topic";
                 String key = "key";
@@ -54,7 +61,9 @@ public class KafkaProducerActorTest {
                     e.printStackTrace();
                 }
                 Object message = "test-message";
-                actorRef.tell(new KafkaProducerActor.ProduceMessage("test-topic", "key", message, correlationId, true),
+                actorRef.tell(
+                        new KafkaProducerActor.ProduceMessage("test-topic", "key", message, correlationId, true, "req",
+                                "scen", scala.collection.immutable.List$.MODULE$.empty()),
                         getRef());
 
                 // Verify actor sent back metadata (since auto-complete is true)
@@ -77,9 +86,12 @@ public class KafkaProducerActorTest {
                 org.apache.kafka.common.serialization.Serializer<Object> valueSerializer = (org.apache.kafka.common.serialization.Serializer<Object>) (org.apache.kafka.common.serialization.Serializer<?>) new StringSerializer();
                 MockProducer<String, Object> mockProducer = new MockProducer<>(false, new StringSerializer(),
                         valueSerializer);
+                StatsEngine statsEngine = mock(StatsEngine.class);
+                Clock clock = mock(Clock.class);
                 TestActorRef<KafkaProducerActor> producer = TestActorRef.create(system,
                         KafkaProducerActor
-                                .props((org.apache.kafka.clients.producer.Producer<String, Object>) mockProducer));
+                                .props((org.apache.kafka.clients.producer.Producer<String, Object>) mockProducer,
+                                        statsEngine, clock));
 
                 String topic = "test-topic";
                 String key = "key";
@@ -87,7 +99,7 @@ public class KafkaProducerActorTest {
                 String correlationId = "corr-1";
 
                 KafkaProducerActor.ProduceMessage msg = new KafkaProducerActor.ProduceMessage(topic, key, value,
-                        correlationId, true);
+                        correlationId, true, "req", "scen", scala.collection.immutable.List$.MODULE$.empty());
                 producer.tell(msg, getRef());
 
                 try {

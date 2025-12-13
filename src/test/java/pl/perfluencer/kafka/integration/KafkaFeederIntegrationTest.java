@@ -114,7 +114,7 @@ public class KafkaFeederIntegrationTest {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.ACKS_CONFIG, "all");
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps));
+        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps, null, null));
 
         // Send messages using feeder data
         int messageCount = 0;
@@ -133,8 +133,10 @@ public class KafkaFeederIntegrationTest {
                     accountId, // Key from feeder
                     payload,
                     correlationId,
-                    true // waitForAck
-            );
+                    true, // waitForAck
+                    null,
+                    null,
+                    scala.collection.immutable.List$.MODULE$.empty());
 
             producerActor.tell(msg, probe.getRef());
             messageCount++;
@@ -213,7 +215,7 @@ public class KafkaFeederIntegrationTest {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps));
+        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps, null, null));
 
         // Send messages
         for (Map<String, String> record : testRecords) {
@@ -229,7 +231,10 @@ public class KafkaFeederIntegrationTest {
                     record.get("accountId"),
                     payload,
                     UUID.randomUUID().toString(),
-                    true);
+                    true,
+                    null,
+                    null,
+                    scala.collection.immutable.List$.MODULE$.empty());
             producerActor.tell(msg, probe.getRef());
         }
 
