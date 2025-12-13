@@ -895,6 +895,40 @@ setUp(scn.injectOpen(atOnceUsers(1)))
 *   `kafka-producer-request-latency-avg`
 *   `kafka-consumer-fetch-latency-avg`
 
+### 4. Built-in Gatling Metrics
+
+In addition to JMX metrics, the extension reports specific breakdown metrics to Gatling's StatsEngine for every transaction. This allows you to pinpoint latency sources.
+
+| Metric Name Suffix | Description |
+|---|---|
+| `(none)` | The full **End-to-End Latency**. Includes: Send + Process + Store + Receive time. |
+| `-send` | **Send Duration**: Time taken by the Kafka Producer to send the message and receive acknowledgement (if `waitForAck=true`). High values indicate network issues or broker congestion. |
+| `-store` | **Store Duration**: Time taken to persist the request in the Request Store (Redis/Postgres). High values indicate database bottlenecks. |
+
+**Example:**
+If your request name is `PaymentRequest`:
+- `PaymentRequest`: Total time (e.g., 150ms)
+- `PaymentRequest-send`: Broker ack time (e.g., 20ms)
+- `PaymentRequest-store`: Redis write time (e.g., 2ms)
+
+You can use standard Gatling assertions on these breakdown metrics:
+```java
+// Assert that Redis write times are fast
+details("PaymentRequest-store").responseTime().percentile99().lt(10)
+
+// Assert that Broker ack times are reasonable
+details("PaymentRequest-send").responseTime().percentile99().lt(50)
+```
+
+**Configuration:**
+Detailed store latency metrics are **disabled by default** to minimize overhead. You can enable them if you need to debug request storage performance:
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    // ...
+    .measureStoreLatency(true); // Enable detailed store metrics
+```
+
 ---
 
 ## 🔥 Resilience & Chaos Testing

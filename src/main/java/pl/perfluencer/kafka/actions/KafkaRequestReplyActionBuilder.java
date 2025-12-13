@@ -195,15 +195,17 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                     session.scenario(), startTime, timeUnit.toMillis(timeout));
             long storeEnd = coreComponents.clock().nowMillis();
 
-            statsEngine.logResponse(
-                    session.scenario(),
-                    session.groups(),
-                    requestName + " Store",
-                    storeStart,
-                    storeEnd,
-                    Status.apply("OK"),
-                    scala.Option.empty(),
-                    scala.Option.empty());
+            if (((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).isMeasureStoreLatency()) {
+                statsEngine.logResponse(
+                        session.scenario(),
+                        session.groups(),
+                        requestName + " Store",
+                        storeStart,
+                        storeEnd,
+                        Status.apply("OK"),
+                        scala.Option.empty(),
+                        scala.Option.empty());
+            }
         } catch (Exception e) {
             logger.error("Failed to store request in RequestStore", e);
             session.markAsFailed();

@@ -139,6 +139,13 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
+    private boolean measureStoreLatency = false;
+
+    public KafkaProtocolBuilder measureStoreLatency(boolean measureStoreLatency) {
+        this.measureStoreLatency = measureStoreLatency;
+        return this;
+    }
+
     @Override
     public Protocol protocol() {
         return build();
@@ -166,13 +173,16 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final Duration metricInjectionInterval;
         private final String correlationHeaderName;
         private final boolean useTimestampHeader;
+        private final String transactionalId;
+        private final boolean measureStoreLatency;
         private ActorRef producerRouter;
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
                 CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval,
-                String correlationHeaderName, boolean useTimestampHeader, String transactionalId) {
+                String correlationHeaderName, boolean useTimestampHeader, String transactionalId,
+                boolean measureStoreLatency) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -185,6 +195,11 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.correlationHeaderName = correlationHeaderName;
             this.useTimestampHeader = useTimestampHeader;
             this.transactionalId = transactionalId;
+            this.measureStoreLatency = measureStoreLatency;
+        }
+
+        public boolean isMeasureStoreLatency() {
+            return measureStoreLatency;
         }
 
         public Map<String, Object> getProducerProperties() {
@@ -230,8 +245,6 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public boolean isUseTimestampHeader() {
             return useTimestampHeader;
         }
-
-        private final String transactionalId;
 
         public String getTransactionalId() {
             return transactionalId;
@@ -470,6 +483,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 metricInjectionInterval,
                 correlationHeaderName,
                 useTimestampHeader,
-                transactionalId);
+                transactionalId,
+                measureStoreLatency);
     }
 }
