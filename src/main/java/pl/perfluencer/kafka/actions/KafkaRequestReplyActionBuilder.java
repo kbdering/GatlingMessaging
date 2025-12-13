@@ -221,7 +221,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
             long endTime = coreComponents.clock().nowMillis();
             if (exception != null) {
                 // If send fails, the whole transaction fails
-                handleFailure(session, statsEngine, startTime, endTime, exception);
+                handleFailure(session, statsEngine, startTime, endTime, exception, correlationId);
             } else {
                 if (response instanceof RecordMetadata) {
                     // Log the SEND duration
@@ -231,17 +231,21 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                     next.execute(session);
                 } else if (response instanceof org.apache.pekko.actor.Status.Failure) {
                     Throwable e = ((org.apache.pekko.actor.Status.Failure) response).cause();
-                    handleFailure(session, statsEngine, startTime, endTime, e);
+                    handleFailure(session, statsEngine, startTime, endTime, e, correlationId);
                 } else {
                     handleFailure(session, statsEngine, startTime, endTime,
-                            new RuntimeException("Unknown response from actor: " + response));
+                            new RuntimeException("Unknown response from actor: " + response), correlationId);
                 }
             }
         });
     }
 
     private void handleFailure(io.gatling.core.session.Session session, StatsEngine statsEngine, long startTime,
-            long endTime, Throwable e) {
+            long endTime, Throwable e, String correlationId) {
+        // Remove from store to prevent timeout
+        RequestStore requestStore = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getRequestStore();
+        requestStore.deleteRequest(correlationId);
+
         session.markAsFailed();
         statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), requestName + "-Send", startTime, endTime,
                 Status.apply("KO"),
