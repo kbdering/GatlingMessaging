@@ -62,10 +62,14 @@ public class TransactionalProducerIntegrationTest {
                 .numConsumers(0);
 
         // 2. Create Action
+        // 2. Create Action
         StatsEngine statsEngine = mock(StatsEngine.class);
-        // Pass null for CoreComponents as we modified KafkaProtocolComponents to handle
-        // it
-        CoreComponents coreComponents = null;
+        io.gatling.commons.util.Clock clock = mock(io.gatling.commons.util.Clock.class);
+
+        CoreComponents coreComponents = mock(CoreComponents.class);
+        when(coreComponents.statsEngine()).thenReturn(statsEngine);
+        when(coreComponents.clock()).thenReturn(clock);
+        when(coreComponents.toString()).thenReturn("mockCoreComponents");
 
         // Build Action
         KafkaRequestReplyActionBuilder actionBuilder = KafkaDsl.kafkaRequestReply(
@@ -92,7 +96,8 @@ public class TransactionalProducerIntegrationTest {
         // Send a message
         String correlationId = UUID.randomUUID().toString();
         pl.perfluencer.kafka.actors.KafkaProducerActor.ProduceMessage message = new pl.perfluencer.kafka.actors.KafkaProducerActor.ProduceMessage(
-                topic, "key", "value", correlationId, true);
+                topic, "key", "value", correlationId, true, null, null,
+                scala.collection.immutable.List$.MODULE$.empty());
 
         TestKit probe = new TestKit(system);
         producerRouter.tell(message, probe.getRef());

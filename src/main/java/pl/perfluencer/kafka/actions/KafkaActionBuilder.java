@@ -29,6 +29,7 @@ import scala.concurrent.Future;
 import scala.concurrent.Await;
 import scala.concurrent.ExecutionContext;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.StandardCharsets;
 
 public class KafkaActionBuilder implements ActionBuilder { // USE io.gatling.core.action.builder.ActionBuilder
 
@@ -193,7 +194,8 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         String correlationId = resolvedKey != null ? resolvedKey : java.util.UUID.randomUUID().toString();
 
         KafkaProducerActor.ProduceMessage message = new KafkaProducerActor.ProduceMessage(
-                topic, resolvedKey, valueBytes, correlationId, resolvedHeaders, correlationHeaderName, waitForAck);
+                topic, resolvedKey, valueBytes, correlationId, resolvedHeaders, correlationHeaderName, waitForAck,
+                requestName, session.scenario(), session.groups());
 
         long startTime = coreComponents.clock().nowMillis();
 

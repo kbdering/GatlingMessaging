@@ -12,6 +12,11 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.gatling.core.stats.StatsEngine;
+import io.gatling.commons.util.Clock;
+import io.gatling.commons.stats.Status;
+import scala.Option;
+import scala.collection.immutable.List;
 
 public class KafkaProducerActor extends AbstractActor {
 
@@ -26,13 +31,19 @@ public class KafkaProducerActor extends AbstractActor {
         public final Map<String, String> headers;
         public final String correlationHeaderName;
         public final boolean waitForAck;
+        public final String requestName;
+        public final String scenario;
+        public final List<String> groups;
 
-        public ProduceMessage(String topic, String key, Object value, String correlationId, boolean waitForAck) {
-            this(topic, key, value, correlationId, java.util.Collections.emptyMap(), "correlationId", waitForAck);
+        public ProduceMessage(String topic, String key, Object value, String correlationId, boolean waitForAck,
+                String requestName, String scenario, List<String> groups) {
+            this(topic, key, value, correlationId, java.util.Collections.emptyMap(), "correlationId", waitForAck,
+                    requestName, scenario, groups);
         }
 
         public ProduceMessage(String topic, String key, Object value, String correlationId, Map<String, String> headers,
-                String correlationHeaderName, boolean waitForAck) {
+                String correlationHeaderName, boolean waitForAck, String requestName, String scenario,
+                List<String> groups) {
             this.topic = topic;
             this.key = key;
             this.value = value;
@@ -40,14 +51,21 @@ public class KafkaProducerActor extends AbstractActor {
             this.headers = headers;
             this.correlationHeaderName = correlationHeaderName;
             this.waitForAck = waitForAck;
+            this.requestName = requestName;
+            this.scenario = scenario;
+            this.groups = groups;
         }
     }
 
     private final boolean isTransactional;
+    private final StatsEngine statsEngine;
+    private final Clock clock;
 
-    public KafkaProducerActor(Map<String, Object> producerProperties) {
+    public KafkaProducerActor(Map<String, Object> producerProperties, StatsEngine statsEngine, Clock clock) {
         logger.info("Starting KafkaProducerActor with properties: {}", producerProperties);
         this.isTransactional = producerProperties.containsKey(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
+        this.statsEngine = statsEngine;
+        this.clock = clock;
         try {
             this.producer = new KafkaProducer<>(producerProperties);
             if (isTransactional) {
@@ -62,18 +80,21 @@ public class KafkaProducerActor extends AbstractActor {
     }
 
     // Visible for testing
-    public KafkaProducerActor(Producer<String, Object> producer) {
+    public KafkaProducerActor(Producer<String, Object> producer, StatsEngine statsEngine, Clock clock) {
         this.producer = producer;
         this.isTransactional = false;
+        this.statsEngine = statsEngine;
+        this.clock = clock;
     }
 
-    public static Props props(Map<String, Object> producerProperties) {
-        return Props.create(KafkaProducerActor.class, () -> new KafkaProducerActor(producerProperties));
+    public static Props props(Map<String, Object> producerProperties, StatsEngine statsEngine, Clock clock) {
+        return Props.create(KafkaProducerActor.class,
+                () -> new KafkaProducerActor(producerProperties, statsEngine, clock));
     }
 
     // Visible for testing
-    public static Props props(Producer<String, Object> producer) {
-        return Props.create(KafkaProducerActor.class, () -> new KafkaProducerActor(producer));
+    public static Props props(Producer<String, Object> producer, StatsEngine statsEngine, Clock clock) {
+        return Props.create(KafkaProducerActor.class, () -> new KafkaProducerActor(producer, statsEngine, clock));
     }
 
     @Override
@@ -84,6 +105,7 @@ public class KafkaProducerActor extends AbstractActor {
     }
 
     private void handleProduceMessage(ProduceMessage message) {
+        long start = clock != null ? clock.nowMillis() : System.currentTimeMillis();
         logger.debug("Received ProduceMessage: topic={}, key={}, value={}, waitForAck={}", message.topic, message.key,
                 message.value, message.waitForAck);
         ProducerRecord<String, Object> record = new ProducerRecord<>(message.topic, message.key, message.value);
@@ -135,6 +157,8 @@ public class KafkaProducerActor extends AbstractActor {
             }
         } else if (message.waitForAck) {
             producer.send(record, (metadata, exception) -> {
+                long end = clock != null ? clock.nowMillis() : System.currentTimeMillis();
+                logMetrics(message, start, end, exception);
                 if (exception != null) {
                     replyTo.tell(new org.apache.pekko.actor.Status.Failure(exception), getSelf());
                     if (exception instanceof KafkaException) {
@@ -148,6 +172,8 @@ public class KafkaProducerActor extends AbstractActor {
             // Fire and forget - send immediately and don't wait for callback to reply
             // We still use a callback to log errors, but we reply to the sender immediately
             producer.send(record, (metadata, exception) -> {
+                long end = clock != null ? clock.nowMillis() : System.currentTimeMillis();
+                logMetrics(message, start, end, exception);
                 if (exception != null) {
                     logger.error("Kafka Producer Error (Async)", exception);
                 }
@@ -158,6 +184,22 @@ public class KafkaProducerActor extends AbstractActor {
             // However, if we reply immediately, we can't send RecordMetadata.
             // Let's send a success object.
             replyTo.tell("Message sent (async)", getSelf());
+        }
+    }
+
+    private void logMetrics(ProduceMessage message, long start, long end, Exception exception) {
+        if (statsEngine != null && message.requestName != null) {
+            Status status = exception == null ? Status.apply("OK") : Status.apply("KO");
+            Option<String> messageOpt = exception == null ? Option.empty() : Option.apply(exception.getMessage());
+            statsEngine.logResponse(
+                    message.scenario,
+                    message.groups,
+                    message.requestName + " Send",
+                    start,
+                    end,
+                    status,
+                    Option.empty(),
+                    messageOpt);
         }
     }
 

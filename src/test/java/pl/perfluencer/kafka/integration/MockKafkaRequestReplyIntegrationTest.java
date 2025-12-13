@@ -92,10 +92,10 @@ public class MockKafkaRequestReplyIntegrationTest {
         String scenarioName = "TestScenario";
 
         // 1. Create producer actor and send request
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer));
+        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
         producerActor.tell(
-                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, null,
-                        "correlationId", true),
+                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, true,
+                        null, null, scala.collection.immutable.List$.MODULE$.empty()),
                 probe.getRef());
 
         Thread.sleep(100); // Give actor time to process
@@ -135,14 +135,17 @@ public class MockKafkaRequestReplyIntegrationTest {
     @Test
     public void testMultipleRequestsWithDifferentCorrelationIds() throws InterruptedException {
         TestKit probe = new TestKit(system);
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer));
+        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
 
         // Send multiple requests
         String[] correlationIds = { "corr-1", "corr-2", "corr-3" };
         for (String corrId : correlationIds) {
+            String topic = "request-topic";
+            String key = "key-" + corrId;
+            byte[] value = ("value-" + corrId).getBytes();
             producerActor.tell(
-                    new KafkaProducerActor.ProduceMessage("request-topic", "key-" + corrId,
-                            ("value-" + corrId).getBytes(), corrId, null, "correlationId", true),
+                    new KafkaProducerActor.ProduceMessage(topic, key, value, corrId, true, null, null,
+                            scala.collection.immutable.List$.MODULE$.empty()),
                     probe.getRef());
             requestStore.storeRequest(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
                     SerializationType.STRING, "Req-" + corrId, "Scenario", System.currentTimeMillis(), 30000);

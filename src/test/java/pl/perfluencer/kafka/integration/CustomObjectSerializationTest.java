@@ -71,7 +71,7 @@ public class CustomObjectSerializationTest {
                 Serializer<Object> valueSerializer = (Serializer<Object>) (Serializer<?>) new MyObjectSerializer();
                 MockProducer<String, Object> producer = new MockProducer<>(true, new StringSerializer(),
                         valueSerializer);
-                ActorRef actorRef = system.actorOf(KafkaProducerActor.props(producer));
+                ActorRef actorRef = system.actorOf(KafkaProducerActor.props(producer, null, null));
 
                 String topic = "custom-obj-topic";
                 String key = "key";
@@ -79,7 +79,8 @@ public class CustomObjectSerializationTest {
                 String correlationId = "corr-custom";
 
                 actorRef.tell(new KafkaProducerActor.ProduceMessage("request-topic", "key",
-                        message, "correlationId", true), getRef());
+                        message, "correlationId", true, null, null, scala.collection.immutable.List$.MODULE$.empty()),
+                        getRef());
 
                 // Verify actor sent back metadata
                 expectMsgClass(org.apache.kafka.clients.producer.RecordMetadata.class);
