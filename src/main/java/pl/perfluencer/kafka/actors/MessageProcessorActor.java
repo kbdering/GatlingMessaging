@@ -2,6 +2,7 @@ package pl.perfluencer.kafka.actors;
 
 import org.apache.pekko.actor.AbstractActor;
 import org.apache.pekko.actor.Props;
+import org.apache.pekko.actor.ActorRef;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.stats.StatsEngine;
 import pl.perfluencer.kafka.cache.RequestStore;
@@ -20,6 +21,7 @@ public class MessageProcessorActor extends AbstractActor {
             List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
             boolean useTimestampHeader) {
         this.messageProcessor = new MessageProcessor(requestStore, coreComponents.statsEngine(), coreComponents.clock(),
+                (ActorRef) (Object) coreComponents.controller(),
                 checks,
                 correlationExtractor, correlationHeaderName, useTimestampHeader);
     }
@@ -29,7 +31,8 @@ public class MessageProcessorActor extends AbstractActor {
             io.gatling.commons.util.Clock clock,
             List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
             boolean useTimestampHeader) {
-        this.messageProcessor = new MessageProcessor(requestStore, statsEngine, clock, checks, correlationExtractor,
+        this.messageProcessor = new MessageProcessor(requestStore, statsEngine, clock, null, checks,
+                correlationExtractor,
                 correlationHeaderName, useTimestampHeader);
     }
 

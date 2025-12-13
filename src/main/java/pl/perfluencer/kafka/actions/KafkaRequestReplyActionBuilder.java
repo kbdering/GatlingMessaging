@@ -1,6 +1,7 @@
 package pl.perfluencer.kafka.actions;
 
 import org.apache.pekko.actor.ActorRef;
+import org.apache.pekko.actor.PoisonPill;
 import org.apache.pekko.actor.ActorSystem;
 import org.apache.pekko.routing.RoundRobinPool;
 import io.gatling.core.action.Action;
@@ -188,8 +189,20 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
         // Store request for correlation
         RequestStore requestStore = ((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).getRequestStore();
-        requestStore.storeRequest(correlationId, resolvedKey, valueObj, serializationType, requestName,
-                session.scenario(), startTime, timeUnit.toMillis(timeout));
+        try {
+            requestStore.storeRequest(correlationId, resolvedKey, valueObj, serializationType, requestName,
+                    session.scenario(), startTime, timeUnit.toMillis(timeout));
+        } catch (Exception e) {
+            logger.error("Failed to store request in RequestStore", e);
+            session.markAsFailed();
+            // Send PoisonPill to stop the Controller (and thus the test) without using
+            // internal Crash class
+            // Unsafe cast to Pekko ActorRef required as Gatling ActorRef is a wrapper
+            ((org.apache.pekko.actor.ActorRef) (Object) coreComponents.controller()).tell(PoisonPill.getInstance(),
+                    ActorRef.noSender());
+            next.execute(session);
+            return;
+        }
 
         java.util.Map<String, String> resolvedHeaders = new java.util.HashMap<>();
         for (java.util.Map.Entry<String, Function<Session, String>> entry : headers.entrySet()) {
