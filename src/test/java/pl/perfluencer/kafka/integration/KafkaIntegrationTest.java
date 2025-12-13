@@ -91,11 +91,11 @@ public class KafkaIntegrationTest {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps));
+        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps, null, null));
 
         // 3. Send message to Request Topic
         KafkaProducerActor.ProduceMessage msg2 = new KafkaProducerActor.ProduceMessage(requestTopic, key,
-                value.getBytes(), correlationId, true);
+                value.getBytes(), correlationId, true, null, null, scala.collection.immutable.List$.MODULE$.empty());
         producerActor.tell(msg2, probe.getRef());
 
         // 4. Simulate Application Under Test: Produce response to Response Topic

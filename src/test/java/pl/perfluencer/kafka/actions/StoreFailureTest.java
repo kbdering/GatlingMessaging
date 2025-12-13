@@ -43,7 +43,7 @@ public class StoreFailureTest {
         // Use generic casting to avoid lint errors with specific generic types in mocks
         // if possible,
         // or just suppression.
-        ActorRef producerRouter = system.actorOf(KafkaProducerActor.props(mockProducer));
+        ActorRef producerRouter = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
         when(kafkaProtocol.getProducerRouter()).thenReturn(producerRouter);
 
         // Mock RequestStore to throw exception
