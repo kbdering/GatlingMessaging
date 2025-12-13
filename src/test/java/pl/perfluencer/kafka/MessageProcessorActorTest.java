@@ -102,6 +102,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.emptyList(),
                 (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 "correlationId", false);
@@ -134,7 +135,8 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
+        }, org.apache.pekko.actor.ActorRef.noSender(), Collections.emptyList(),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
                 false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
@@ -162,7 +164,8 @@ public class MessageProcessorActorTest {
             public long nowMillis() {
                 return 0;
             }
-        }, Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
+        }, org.apache.pekko.actor.ActorRef.noSender(), Collections.emptyList(),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
                 false);
 
         // Record with missing correlationId header
@@ -234,6 +237,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(stringCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 "correlationId", false);
 
@@ -305,6 +309,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(bytesCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 "correlationId", false);
 
@@ -374,6 +379,7 @@ public class MessageProcessorActorTest {
                 (req, res) -> Optional.of("Intentional failure"));
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(failCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 "correlationId", false);
 
@@ -446,6 +452,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(specialCheck),
                 (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
@@ -524,6 +531,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(encodingCheck),
                 (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
@@ -601,6 +609,7 @@ public class MessageProcessorActorTest {
                 });
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(malformedCheck),
                 (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
 
