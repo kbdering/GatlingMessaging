@@ -7,6 +7,10 @@ import pl.perfluencer.kafka.cache.BatchProcessor;
 import pl.perfluencer.kafka.cache.RequestStore;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.pekko.actor.ActorRef;
+import org.apache.pekko.actor.PoisonPill;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import scala.Option;
 import scala.collection.immutable.List$;
@@ -18,21 +22,25 @@ import java.util.Map;
 import java.util.Optional;
 
 public class MessageProcessor {
+    private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
 
     private final RequestStore requestStore;
     private final StatsEngine statsEngine;
     private final Clock clock;
+    private final ActorRef controller;
     private final List<MessageCheck<?, ?>> checks;
     private final CorrelationExtractor correlationExtractor;
     private final String correlationHeaderName;
     private final boolean useTimestampHeader;
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
+            ActorRef controller,
             List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
             boolean useTimestampHeader) {
         this.requestStore = requestStore;
         this.statsEngine = statsEngine;
         this.clock = clock;
+        this.controller = controller;
         this.checks = checks;
         this.correlationExtractor = correlationExtractor;
         this.correlationHeaderName = correlationHeaderName;
@@ -76,127 +84,140 @@ public class MessageProcessor {
         }
 
         // 2. Batch retrieve and remove requests from store
-        requestStore.processBatchedRecords(correlationIdToValue, new BatchProcessor() {
-            @Override
-            public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
-                long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
-                String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
-                String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
+        try {
+            requestStore.processBatchedRecords(correlationIdToValue, new BatchProcessor() {
+                @Override
+                public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
+                    long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
+                    String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
+                    String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
 
-                long endTime = defaultEndTime;
-                Object actualResponseValue = responseValue;
+                    long endTime = defaultEndTime;
+                    Object actualResponseValue = responseValue;
 
-                if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
-                    ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
-                    endTime = record.timestamp();
-                    actualResponseValue = record.value();
-                }
+                    if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
+                        ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
+                        endTime = record.timestamp();
+                        actualResponseValue = record.value();
+                    }
 
-                // Default to OK
-                Status status = Status.apply("OK");
-                Option<String> errorMessage = Option.empty();
-                Option<String> responseCode = Option.apply("200"); // Simulate OK
+                    // Default to OK
+                    Status status = Status.apply("OK");
+                    Option<String> errorMessage = Option.empty();
+                    Option<String> responseCode = Option.apply("200"); // Simulate OK
 
-                // Run checks if any
-                if (checks != null && !checks.isEmpty()) {
-                    for (MessageCheck<?, ?> check : checks) {
-                        try {
-                            // Deserialize request
-                            Object request = null;
-                            if (check.getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
-                                byte[] requestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
-                                if (requestBytes != null) {
-                                    request = new String(requestBytes, StandardCharsets.UTF_8);
+                    // Run checks if any
+                    if (checks != null && !checks.isEmpty()) {
+                        for (MessageCheck<?, ?> check : checks) {
+                            try {
+                                // Deserialize request
+                                Object request = null;
+                                if (check.getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
+                                    byte[] requestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
+                                    if (requestBytes != null) {
+                                        request = new String(requestBytes, StandardCharsets.UTF_8);
+                                    }
+                                } else if (check
+                                        .getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
+                                    request = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
                                 }
-                            } else if (check
-                                    .getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
-                                request = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
-                            }
 
-                            // Deserialize response
-                            Object response = null;
-                            if (check
-                                    .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
-                                if (actualResponseValue instanceof byte[]) {
-                                    response = new String((byte[]) actualResponseValue, StandardCharsets.UTF_8);
-                                } else {
-                                    response = actualResponseValue.toString();
+                                // Deserialize response
+                                Object response = null;
+                                if (check
+                                        .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
+                                    if (actualResponseValue instanceof byte[]) {
+                                        response = new String((byte[]) actualResponseValue, StandardCharsets.UTF_8);
+                                    } else {
+                                        response = actualResponseValue.toString();
+                                    }
+                                } else if (check
+                                        .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
+                                    if (actualResponseValue instanceof byte[]) {
+                                        response = actualResponseValue;
+                                    } else {
+                                        // Fallback or error? For now, toString bytes
+                                        response = actualResponseValue.toString().getBytes(StandardCharsets.UTF_8);
+                                    }
                                 }
-                            } else if (check
-                                    .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
-                                if (actualResponseValue instanceof byte[]) {
-                                    response = actualResponseValue;
-                                } else {
-                                    // Fallback or error? For now, toString bytes
-                                    response = actualResponseValue.toString().getBytes(StandardCharsets.UTF_8);
+
+                                // Execute check
+                                @SuppressWarnings("unchecked")
+                                java.util.function.BiFunction<Object, Object, Optional<String>> checkLogic = (java.util.function.BiFunction<Object, Object, Optional<String>>) check
+                                        .getCheckLogic();
+
+                                Optional<String> failure = checkLogic.apply(request, response);
+                                if (failure.isPresent()) {
+                                    status = Status.apply("KO");
+                                    errorMessage = Option.apply(failure.get());
+                                    responseCode = Option.apply("500"); // Check failure
+                                    break;
                                 }
-                            }
 
-                            // Execute check
-                            @SuppressWarnings("unchecked")
-                            java.util.function.BiFunction<Object, Object, Optional<String>> checkLogic = (java.util.function.BiFunction<Object, Object, Optional<String>>) check
-                                    .getCheckLogic();
-
-                            Optional<String> failure = checkLogic.apply(request, response);
-                            if (failure.isPresent()) {
+                            } catch (Exception e) {
                                 status = Status.apply("KO");
-                                errorMessage = Option.apply(failure.get());
-                                responseCode = Option.apply("500"); // Check failure
+                                errorMessage = Option.apply("Check execution failed: " + e.getMessage());
+                                responseCode = Option.apply("500");
                                 break;
                             }
-
-                        } catch (Exception e) {
-                            status = Status.apply("KO");
-                            errorMessage = Option.apply("Check execution failed: " + e.getMessage());
-                            responseCode = Option.apply("500");
-                            break;
                         }
                     }
+
+                    statsEngine.logResponse(
+                            scenarioName,
+                            List$.MODULE$.empty(), // groups
+                            transactionName, // name
+                            startTime,
+                            endTime,
+                            status,
+                            responseCode,
+                            errorMessage);
                 }
 
-                statsEngine.logResponse(
-                        scenarioName,
-                        List$.MODULE$.empty(), // groups
-                        transactionName, // name
-                        startTime,
-                        endTime,
-                        status,
-                        responseCode,
-                        errorMessage);
-            }
+                @Override
+                public void onUnmatched(String correlationId, Object responseValue) {
+                    long startTime = defaultEndTime; // Default start time if lookup fails early
+                    String transactionName = "Missing Match"; // Default transaction name
+                    String scenarioName = "Unknown Scenario"; // Default scenario name
+                    Status status = Status.apply("KO"); // Default status is failure
+                    Option<String> errorMessage = Option.apply("Request data not found for correlationId");
+                    Option<String> responseCode = Option.apply("404"); // Simulate Not Found
 
-            @Override
-            public void onUnmatched(String correlationId, Object responseValue) {
-                long startTime = defaultEndTime; // Default start time if lookup fails early
-                String transactionName = "Missing Match"; // Default transaction name
-                String scenarioName = "Unknown Scenario"; // Default scenario name
-                Status status = Status.apply("KO"); // Default status is failure
-                Option<String> errorMessage = Option.apply("Request data not found for correlationId");
-                Option<String> responseCode = Option.apply("404"); // Simulate Not Found
+                    long endTime = defaultEndTime;
+                    if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
+                        ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
+                        endTime = record.timestamp();
+                        // If we want to use the message timestamp as end time, we can.
+                        // But for unmatched, we don't have start time, so duration is 0 or undefined.
+                        // Let's keep it simple and use clock for unmatched or maybe use timestamp for
+                        // both start and end?
+                        // If we use timestamp for end, and clock for start, it might be weird.
+                        // But here startTime is set to endTime (defaultEndTime).
+                        startTime = endTime;
+                    }
 
-                long endTime = defaultEndTime;
-                if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
-                    ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
-                    endTime = record.timestamp();
-                    // If we want to use the message timestamp as end time, we can.
-                    // But for unmatched, we don't have start time, so duration is 0 or undefined.
-                    // Let's keep it simple and use clock for unmatched or maybe use timestamp for
-                    // both start and end?
-                    // If we use timestamp for end, and clock for start, it might be weird.
-                    // But here startTime is set to endTime (defaultEndTime).
-                    startTime = endTime;
+                    statsEngine.logResponse(
+                            scenarioName,
+                            List$.MODULE$.empty(),
+                            transactionName,
+                            startTime,
+                            endTime,
+                            status,
+                            responseCode,
+                            errorMessage);
                 }
-
-                statsEngine.logResponse(
-                        scenarioName,
-                        List$.MODULE$.empty(),
-                        transactionName,
-                        startTime,
-                        endTime,
-                        status,
-                        responseCode,
-                        errorMessage);
+            });
+        } catch (Exception e) {
+            // CRITICAL: Stop the test if RequestStore retrieval fails (e.g., Redis down)
+            if (controller != null) {
+                logger.error("Critical error in MessageProcessor. Sending PoisonPill to Controller.", e);
+                // Send PoisonPill to stop the Controller (and thus the test) without using
+                // internal Crash class
+                controller.tell(PoisonPill.getInstance(), ActorRef.noSender());
+            } else {
+                // Should not happen in real execution, but good for safety
+                throw new RuntimeException("Error accessing RequestStore and no Controller available to stop test", e);
             }
-        });
+        }
     }
 }

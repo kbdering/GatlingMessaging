@@ -61,7 +61,8 @@ public class MockKafkaRequestReplyIntegrationTest {
         Clock clock = () -> System.currentTimeMillis();
         List<MessageCheck<?, ?>> checks = Collections.emptyList();
         CorrelationExtractor correlationExtractor = null; // Use default header extraction
-        processor = new MessageProcessor(requestStore, stubStatsEngine, clock, checks, correlationExtractor,
+        processor = new MessageProcessor(requestStore, stubStatsEngine, clock, ActorRef.noSender(), checks,
+                correlationExtractor,
                 "correlationId", false);
 
         // Setup mock consumer with topic partition

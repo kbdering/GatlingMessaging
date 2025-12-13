@@ -11,6 +11,7 @@ import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.Test;
+import org.apache.pekko.actor.ActorRef;
 import scala.Option;
 import scala.collection.immutable.List$;
 
@@ -78,6 +79,7 @@ public class MessageProcessorTimestampTest {
                     return null;
                 });
         MessageProcessor messageProcessor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                ActorRef.noSender(),
                 Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 correlationHeaderName, true);
 
@@ -153,6 +155,7 @@ public class MessageProcessorTimestampTest {
                 });
 
         MessageProcessor messageProcessor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
+                ActorRef.noSender(),
                 Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
                 correlationHeaderName, false);
 
