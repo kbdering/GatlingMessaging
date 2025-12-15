@@ -80,8 +80,10 @@ public class MessageProcessorTimestampTest {
                 });
         MessageProcessor messageProcessor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 ActorRef.noSender(),
-                Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                correlationHeaderName, true);
+                Collections.emptyList(),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                true);
 
         // Create a record - the simple constructor doesn't allow setting timestamp
         // When useTimestampHeader is true and record has a valid timestamp, it uses
@@ -156,8 +158,10 @@ public class MessageProcessorTimestampTest {
 
         MessageProcessor messageProcessor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 ActorRef.noSender(),
-                Collections.emptyList(), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                correlationHeaderName, false);
+                Collections.emptyList(),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        correlationHeaderName),
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "value");
         record.headers().add(new RecordHeader(correlationHeaderName, correlationId.getBytes(StandardCharsets.UTF_8)));

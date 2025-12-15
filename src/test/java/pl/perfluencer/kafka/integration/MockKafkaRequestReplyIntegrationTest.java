@@ -60,10 +60,11 @@ public class MockKafkaRequestReplyIntegrationTest {
         // Create MessageProcessor with required dependencies
         Clock clock = () -> System.currentTimeMillis();
         List<MessageCheck<?, ?>> checks = Collections.emptyList();
-        CorrelationExtractor correlationExtractor = null; // Use default header extraction
+        CorrelationExtractor correlationExtractor = new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                "correlationId");
         processor = new MessageProcessor(requestStore, stubStatsEngine, clock, ActorRef.noSender(), checks,
                 correlationExtractor,
-                "correlationId", false);
+                false);
 
         // Setup mock consumer with topic partition
         TopicPartition partition = new TopicPartition("response-topic", 0);

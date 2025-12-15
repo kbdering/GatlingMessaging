@@ -30,12 +30,11 @@ public class MessageProcessor {
     private final ActorRef controller;
     private final List<MessageCheck<?, ?>> checks;
     private final CorrelationExtractor correlationExtractor;
-    private final String correlationHeaderName;
     private final boolean useTimestampHeader;
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
             ActorRef controller,
-            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
+            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor,
             boolean useTimestampHeader) {
         this.requestStore = requestStore;
         this.statsEngine = statsEngine;
@@ -43,51 +42,69 @@ public class MessageProcessor {
         this.controller = controller;
         this.checks = checks;
         this.correlationExtractor = correlationExtractor;
-        this.correlationHeaderName = correlationHeaderName;
         this.useTimestampHeader = useTimestampHeader;
     }
 
     public void process(List<ConsumerRecord<String, Object>> records) {
         long defaultEndTime = clock.nowMillis();
 
-        // 1. Extract correlation IDs and map them to records
-        Map<String, Object> correlationIdToValue = new HashMap<>();
+        // 1. Extract correlation IDs and map them to records (supporting duplicates)
+        Map<String, List<Object>> correlationIdToValues = new HashMap<>();
         for (ConsumerRecord<String, Object> record : records) {
             String correlationId = null;
 
-            // Try to extract from headers first (default strategy)
-            if (record.headers() != null) {
-                for (org.apache.kafka.common.header.Header header : record.headers()) {
-                    if (correlationHeaderName.equals(header.key())) {
-                        correlationId = new String(header.value(), StandardCharsets.UTF_8);
-                        break;
-                    }
-                }
-            }
-
-            // If not found in headers, try body extraction if configured
-            if (correlationId == null && correlationExtractor != null && record.value() != null) {
+            if (correlationExtractor != null) {
                 correlationId = correlationExtractor.extract(record);
             }
 
             if (correlationId != null) {
-                // If using timestamp header, we need to pass the whole record to access the
-                // timestamp later
-                // Otherwise, we just pass the value as before (though passing record is safe
-                // too as long as we handle it)
+                Object valueToStore;
                 if (useTimestampHeader) {
-                    correlationIdToValue.put(correlationId, record);
+                    valueToStore = record;
                 } else {
-                    correlationIdToValue.put(correlationId, record.value());
+                    valueToStore = record.value();
                 }
+                correlationIdToValues.computeIfAbsent(correlationId, k -> new java.util.ArrayList<>())
+                        .add(valueToStore);
             }
         }
 
         // 2. Batch retrieve and remove requests from store
         try {
-            requestStore.processBatchedRecords(correlationIdToValue, new BatchProcessor() {
+            // We cast the map because processBatchedRecords expects Map<String, Object> but
+            // passes values through opaque
+            @SuppressWarnings("unchecked")
+            Map<String, Object> opaqueMap = (Map<String, Object>) (Map<?, ?>) correlationIdToValues;
+
+            requestStore.processBatchedRecords(opaqueMap, new BatchProcessor() {
                 @Override
                 public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
+                    // responseValue is actually List<Object>
+                    List<?> values = (List<?>) responseValue;
+
+                    // Process first response as SUCCESS
+                    if (!values.isEmpty()) {
+                        processSingleResponse(correlationId, requestData, values.get(0), false);
+                    }
+
+                    // Process subsequent responses as DUPLICATES (Error)
+                    for (int i = 1; i < values.size(); i++) {
+                        processSingleResponse(correlationId, requestData, values.get(i), true);
+                    }
+                }
+
+                @Override
+                public void onUnmatched(String correlationId, Object responseValue) {
+                    // responseValue is actually List<Object>
+                    List<?> values = (List<?>) responseValue;
+
+                    for (Object val : values) {
+                        processUnmatchedResponse(correlationId, val);
+                    }
+                }
+
+                private void processSingleResponse(String correlationId, Map<String, Object> requestData,
+                        Object responseValue, boolean isDuplicate) {
                     long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
                     String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
                     String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
@@ -101,64 +118,74 @@ public class MessageProcessor {
                         actualResponseValue = record.value();
                     }
 
-                    // Default to OK
-                    Status status = Status.apply("OK");
-                    Option<String> errorMessage = Option.empty();
-                    Option<String> responseCode = Option.apply("200"); // Simulate OK
+                    Status status;
+                    Option<String> errorMessage;
+                    Option<String> responseCode;
 
-                    // Run checks if any
-                    if (checks != null && !checks.isEmpty()) {
-                        for (MessageCheck<?, ?> check : checks) {
-                            try {
-                                // Deserialize request
-                                Object request = null;
-                                if (check.getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
-                                    byte[] requestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
-                                    if (requestBytes != null) {
-                                        request = new String(requestBytes, StandardCharsets.UTF_8);
+                    if (isDuplicate) {
+                        status = Status.apply("KO");
+                        errorMessage = Option.apply("Duplicate response received");
+                        responseCode = Option.apply("409"); // Conflict/Duplicate
+                    } else {
+                        // Default to OK
+                        status = Status.apply("OK");
+                        errorMessage = Option.empty();
+                        responseCode = Option.apply("200"); // Simulate OK
+
+                        // Run checks if any
+                        if (checks != null && !checks.isEmpty()) {
+                            for (MessageCheck<?, ?> check : checks) {
+                                try {
+                                    // Deserialize request
+                                    Object request = null;
+                                    if (check
+                                            .getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
+                                        byte[] requestBytes = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
+                                        if (requestBytes != null) {
+                                            request = new String(requestBytes, StandardCharsets.UTF_8);
+                                        }
+                                    } else if (check
+                                            .getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
+                                        request = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
                                     }
-                                } else if (check
-                                        .getRequestSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
-                                    request = (byte[]) requestData.get(RequestStore.VALUE_BYTES);
-                                }
 
-                                // Deserialize response
-                                Object response = null;
-                                if (check
-                                        .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
-                                    if (actualResponseValue instanceof byte[]) {
-                                        response = new String((byte[]) actualResponseValue, StandardCharsets.UTF_8);
-                                    } else {
-                                        response = actualResponseValue.toString();
+                                    // Deserialize response
+                                    Object response = null;
+                                    if (check
+                                            .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.STRING) {
+                                        if (actualResponseValue instanceof byte[]) {
+                                            response = new String((byte[]) actualResponseValue, StandardCharsets.UTF_8);
+                                        } else {
+                                            response = actualResponseValue.toString();
+                                        }
+                                    } else if (check
+                                            .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
+                                        if (actualResponseValue instanceof byte[]) {
+                                            response = actualResponseValue;
+                                        } else {
+                                            response = actualResponseValue.toString().getBytes(StandardCharsets.UTF_8);
+                                        }
                                     }
-                                } else if (check
-                                        .getResponseSerdeType() == pl.perfluencer.kafka.util.SerializationType.BYTE_ARRAY) {
-                                    if (actualResponseValue instanceof byte[]) {
-                                        response = actualResponseValue;
-                                    } else {
-                                        // Fallback or error? For now, toString bytes
-                                        response = actualResponseValue.toString().getBytes(StandardCharsets.UTF_8);
+
+                                    // Execute check
+                                    @SuppressWarnings("unchecked")
+                                    java.util.function.BiFunction<Object, Object, Optional<String>> checkLogic = (java.util.function.BiFunction<Object, Object, Optional<String>>) check
+                                            .getCheckLogic();
+
+                                    Optional<String> failure = checkLogic.apply(request, response);
+                                    if (failure.isPresent()) {
+                                        status = Status.apply("KO");
+                                        errorMessage = Option.apply(failure.get());
+                                        responseCode = Option.apply("500"); // Check failure
+                                        break;
                                     }
-                                }
 
-                                // Execute check
-                                @SuppressWarnings("unchecked")
-                                java.util.function.BiFunction<Object, Object, Optional<String>> checkLogic = (java.util.function.BiFunction<Object, Object, Optional<String>>) check
-                                        .getCheckLogic();
-
-                                Optional<String> failure = checkLogic.apply(request, response);
-                                if (failure.isPresent()) {
+                                } catch (Exception e) {
                                     status = Status.apply("KO");
-                                    errorMessage = Option.apply(failure.get());
-                                    responseCode = Option.apply("500"); // Check failure
+                                    errorMessage = Option.apply("Check execution failed: " + e.getMessage());
+                                    responseCode = Option.apply("500");
                                     break;
                                 }
-
-                            } catch (Exception e) {
-                                status = Status.apply("KO");
-                                errorMessage = Option.apply("Check execution failed: " + e.getMessage());
-                                responseCode = Option.apply("500");
-                                break;
                             }
                         }
                     }
@@ -174,8 +201,7 @@ public class MessageProcessor {
                             errorMessage);
                 }
 
-                @Override
-                public void onUnmatched(String correlationId, Object responseValue) {
+                private void processUnmatchedResponse(String correlationId, Object responseValue) {
                     long startTime = defaultEndTime; // Default start time if lookup fails early
                     String transactionName = "Missing Match"; // Default transaction name
                     String scenarioName = "Unknown Scenario"; // Default scenario name
@@ -187,12 +213,6 @@ public class MessageProcessor {
                     if (useTimestampHeader && responseValue instanceof ConsumerRecord) {
                         ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) responseValue;
                         endTime = record.timestamp();
-                        // If we want to use the message timestamp as end time, we can.
-                        // But for unmatched, we don't have start time, so duration is 0 or undefined.
-                        // Let's keep it simple and use clock for unmatched or maybe use timestamp for
-                        // both start and end?
-                        // If we use timestamp for end, and clock for start, it might be weird.
-                        // But here startTime is set to endTime (defaultEndTime).
                         startTime = endTime;
                     }
 

@@ -104,8 +104,9 @@ public class MessageProcessorActorTest {
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.emptyList(),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                "correlationId", false);
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         // Prepare input record
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0,
@@ -136,7 +137,8 @@ public class MessageProcessorActorTest {
                 return 0;
             }
         }, org.apache.pekko.actor.ActorRef.noSender(), Collections.emptyList(),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
                 false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
@@ -165,7 +167,8 @@ public class MessageProcessorActorTest {
                 return 0;
             }
         }, org.apache.pekko.actor.ActorRef.noSender(), Collections.emptyList(),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId",
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
                 false);
 
         // Record with missing correlationId header
@@ -238,8 +241,10 @@ public class MessageProcessorActorTest {
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
-                Collections.singletonList(stringCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                "correlationId", false);
+                Collections.singletonList(stringCheck),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -310,8 +315,10 @@ public class MessageProcessorActorTest {
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
-                Collections.singletonList(bytesCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                "correlationId", false);
+                Collections.singletonList(bytesCheck),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key",
                 (Object) new byte[] { 4, 5, 6 });
@@ -380,8 +387,10 @@ public class MessageProcessorActorTest {
 
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
-                Collections.singletonList(failCheck), (pl.perfluencer.kafka.extractors.CorrelationExtractor) null,
-                "correlationId", false);
+                Collections.singletonList(failCheck),
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) "response");
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -454,7 +463,9 @@ public class MessageProcessorActorTest {
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(specialCheck),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", (Object) specialString);
         record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
@@ -533,7 +544,9 @@ public class MessageProcessorActorTest {
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(encodingCheck),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         // Send response encoded in UTF-16, but processor expects UTF-8 (default for
         // STRING)
@@ -611,7 +624,9 @@ public class MessageProcessorActorTest {
         MessageProcessor processor = new MessageProcessor(stubRequestStore, stubStatsEngine, stubClock,
                 org.apache.pekko.actor.ActorRef.noSender(),
                 Collections.singletonList(malformedCheck),
-                (pl.perfluencer.kafka.extractors.CorrelationExtractor) null, "correlationId", false);
+                (pl.perfluencer.kafka.extractors.CorrelationExtractor) new pl.perfluencer.kafka.extractors.HeaderExtractor(
+                        "correlationId"),
+                false);
 
         // Invalid UTF-8 bytes
         byte[] malformedBytes = new byte[] { (byte) 0xFF, (byte) 0xFF };
