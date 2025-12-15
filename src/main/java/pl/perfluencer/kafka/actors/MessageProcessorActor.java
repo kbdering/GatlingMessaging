@@ -18,37 +18,42 @@ public class MessageProcessorActor extends AbstractActor {
     private final MessageProcessor messageProcessor;
 
     public MessageProcessorActor(RequestStore requestStore, CoreComponents coreComponents,
-            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
+            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor,
             boolean useTimestampHeader) {
-        this.messageProcessor = new MessageProcessor(requestStore, coreComponents.statsEngine(), coreComponents.clock(),
-                (ActorRef) (Object) coreComponents.controller(),
+        this.messageProcessor = new MessageProcessor(
+                requestStore,
+                coreComponents.statsEngine(),
+                coreComponents.clock(),
+                getSelf(), // Controller is self
                 checks,
-                correlationExtractor, correlationHeaderName, useTimestampHeader);
+                correlationExtractor,
+                useTimestampHeader);
     }
 
     // Constructor for testing
     public MessageProcessorActor(RequestStore requestStore, StatsEngine statsEngine,
             io.gatling.commons.util.Clock clock,
-            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor, String correlationHeaderName,
+            List<MessageCheck<?, ?>> checks, CorrelationExtractor correlationExtractor,
             boolean useTimestampHeader) {
         this.messageProcessor = new MessageProcessor(requestStore, statsEngine, clock, null, checks,
                 correlationExtractor,
-                correlationHeaderName, useTimestampHeader);
+                useTimestampHeader);
     }
 
     public static Props props(RequestStore requestStore, CoreComponents coreComponents, List<MessageCheck<?, ?>> checks,
-            CorrelationExtractor correlationExtractor, String correlationHeaderName, boolean useTimestampHeader) {
+            CorrelationExtractor correlationExtractor, boolean useTimestampHeader) {
         // Ensure dependencies are non-null if required
         java.util.Objects.requireNonNull(requestStore, "RequestStore cannot be null");
         java.util.Objects.requireNonNull(coreComponents, "CoreComponents cannot be null");
         return Props.create(MessageProcessorActor.class,
                 () -> new MessageProcessorActor(requestStore, coreComponents, checks, correlationExtractor,
-                        correlationHeaderName, useTimestampHeader));
+                        useTimestampHeader));
     }
 
     public static Props props(RequestStore requestStore, CoreComponents coreComponents,
             List<MessageCheck<?, ?>> checks, String correlationHeaderName) {
-        return props(requestStore, coreComponents, checks, null, correlationHeaderName, false);
+        return props(requestStore, coreComponents, checks,
+                new pl.perfluencer.kafka.extractors.HeaderExtractor(correlationHeaderName), false);
     }
 
     @Override

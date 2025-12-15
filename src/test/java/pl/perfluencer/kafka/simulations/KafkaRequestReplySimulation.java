@@ -37,6 +37,7 @@ public class KafkaRequestReplySimulation extends Simulation {
                 .groupId("gatling-consumer-group-postgres")
                 .numProducers(10)
                 .numConsumers(3)
+                .correlationHeaderName("correlationId") // Explicitly set header correlation
                 .producerProperties(Map.of(
                         ProducerConfig.ACKS_CONFIG, "all"))
                 .consumerProperties(Map.of(

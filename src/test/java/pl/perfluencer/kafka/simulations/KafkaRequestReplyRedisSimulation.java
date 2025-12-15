@@ -32,6 +32,7 @@ public class KafkaRequestReplyRedisSimulation extends Simulation {
                                 .groupId("gatling-consumer-group-redis") // Use a unique group ID
                                 .numProducers(10)
                                 .numConsumers(3)
+                                .correlationHeaderName("correlationId") // Explicitly set header correlation
                                 .producerProperties(Map.of(
                                                 ProducerConfig.ACKS_CONFIG, "all"))
                                 .consumerProperties(Map.of(
