@@ -105,7 +105,6 @@ public class KafkaRequestReplyActionBuilder implements ActionBuilder {
                             new RoundRobinPool(concreteProtocol.getNumConsumers()).props(MessageProcessorActor
                                     .props(concreteProtocol.getRequestStore(), ctx.coreComponents(), messageChecks,
                                             concreteProtocol.getCorrelationExtractor(),
-                                            concreteProtocol.getCorrelationHeaderName(),
                                             concreteProtocol.isUseTimestampHeader())),
                             "messageProcessorRouter-" + responseTopic);
                     ActorRef consumerRouter = system.actorOf(

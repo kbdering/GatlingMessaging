@@ -592,15 +592,39 @@ KafkaProtocolBuilder protocol = kafka()
     ;
 ```
 
-### Configurable Correlation Header
+### Correlation Strategies
 
-By default, the extension uses a header named `correlationId` to track requests. If your application uses a different header name (e.g., `traceId`, `X-Request-ID`), you can configure it in the protocol.
+The framework matches a response to a request using a **Correlation ID**. You can configure how this ID is extracted from the response message.
+
+#### 1. Key Matching (Default)
+By default, the extension expects the **Kafka Record Key** of the response to match the Correlation ID of the request. This is the most common pattern in Kafka streams.
 
 ```java
 KafkaProtocolBuilder protocol = kafka()
     .bootstrapServers("localhost:9092")
-    .correlationHeaderName("X-Request-ID") // Use custom header for correlation
-    // ... other config
+    // No extra config needed; Key Matching is the default
+    ;
+```
+
+#### 2. Header Matching
+If your application uses a specific header (e.g., `correlationId`, `traceId`) to propagate context, you can configure the extension to look there.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .correlationHeaderName("correlationId") // Look for ID in this header
+    ;
+```
+
+#### 3. Body/Payload Extraction
+If the Correlation ID is embedded within the message payload (e.g., inside a JSON body), uses `correlationExtractor` with a specific implementation like `JsonPathExtractor`.
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .correlationExtractor(
+        new JsonPathExtractor("$.meta.correlationId") // Extract from JSON path
+    );
+```
 
 ### Timestamp Extraction
 

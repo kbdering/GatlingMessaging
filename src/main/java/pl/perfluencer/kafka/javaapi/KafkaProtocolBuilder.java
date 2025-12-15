@@ -45,7 +45,8 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     private int numProducers = 1;
     private int numConsumers = 1;
     private RequestStore requestStore;
-    private CorrelationExtractor correlationExtractor;
+    private String correlationHeaderName = "correlationId";
+    private CorrelationExtractor correlationExtractor = new pl.perfluencer.kafka.extractors.KeyExtractor();
 
     private Duration pollTimeout = Duration.ofMillis(100);
 
@@ -66,10 +67,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return this;
     }
 
-    private String correlationHeaderName = "correlationId";
+    public KafkaProtocolBuilder correlationByKey() {
+        this.correlationExtractor = new pl.perfluencer.kafka.extractors.KeyExtractor();
+        return this;
+    }
 
     public KafkaProtocolBuilder correlationHeaderName(String name) {
         this.correlationHeaderName = name;
+        this.correlationExtractor = new pl.perfluencer.kafka.extractors.HeaderExtractor(name);
         return this;
     }
 
