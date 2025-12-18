@@ -64,7 +64,7 @@ public interface CorrelationExtractor {
      * <p>
      * This method is called for every response message received from Kafka.
      * The returned correlation ID is used to look up the original request in the
-     * {@link pl.perfluencer.kafka.cache.RequestStore}.
+     * {@link pl.perfluencer.cache.RequestStore}.
      * 
      * @param record the Kafka consumer record containing the response message
      * @return the correlation ID as a string, or {@code null} if it cannot be

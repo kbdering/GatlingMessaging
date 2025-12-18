@@ -1,4 +1,4 @@
-package pl.perfluencer.kafka.cache;
+package pl.perfluencer.cache;
 
 import java.util.List;
 import java.util.Map;
@@ -33,16 +33,6 @@ import pl.perfluencer.kafka.util.SerializationType;
  * <dt>{@link InMemoryRequestStore}</dt>
  * <dd>Fast, in-process storage using ConcurrentHashMap. Data lost on restart.
  * Best for: Development, short-lived tests, single Gatling instance.</dd>
- * 
- * <dt>{@link RedisRequestStore}</dt>
- * <dd>High-performance distributed storage using Redis. Requires Redis server.
- * Best for: High throughput scenarios, multiple Gatling instances, resilience
- * testing.</dd>
- * 
- * <dt>{@link PostgresRequestStore}</dt>
- * <dd>Durable distributed storage using PostgreSQL. Requires database setup.
- * Best for: Long-running tests, audit trails, maximum durability
- * guarantees.</dd>
  * </dl>
  * 
  * <h2>Data Model:</h2>
@@ -77,8 +67,6 @@ import pl.perfluencer.kafka.util.SerializationType;
  * 
  * @author Jakub Dering
  * @see InMemoryRequestStore
- * @see RedisRequestStore
- * @see PostgresRequestStore
  * @see TimeoutHandler
  */
 public interface RequestStore extends AutoCloseable {

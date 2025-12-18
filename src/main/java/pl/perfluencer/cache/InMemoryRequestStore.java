@@ -1,4 +1,4 @@
-package pl.perfluencer.kafka.cache;
+package pl.perfluencer.cache;
 
 import java.util.Collections;
 import java.util.HashMap;

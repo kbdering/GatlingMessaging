@@ -5,7 +5,7 @@ import org.apache.pekko.actor.Props;
 import org.apache.pekko.actor.ActorRef;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.stats.StatsEngine;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import pl.perfluencer.kafka.MessageProcessor;

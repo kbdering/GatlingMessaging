@@ -1,8 +1,8 @@
 package pl.perfluencer.kafka.integration;
 
 import pl.perfluencer.kafka.actions.KafkaRequestReplyActionBuilder;
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import io.gatling.core.stats.StatsEngine;

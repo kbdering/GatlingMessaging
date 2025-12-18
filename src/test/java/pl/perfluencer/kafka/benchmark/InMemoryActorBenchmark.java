@@ -1,6 +1,6 @@
 package pl.perfluencer.kafka.benchmark;
 
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.kafka.util.SerializationType;
 import org.apache.pekko.actor.AbstractActor;
 import org.apache.pekko.actor.ActorSystem;
@@ -204,7 +204,7 @@ public class InMemoryActorBenchmark {
             }
 
             if (!batch.isEmpty()) {
-                store.processBatchedRecords(batch, new pl.perfluencer.kafka.cache.BatchProcessor() {
+                store.processBatchedRecords(batch, new pl.perfluencer.cache.BatchProcessor() {
                     @Override
                     public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
                     }

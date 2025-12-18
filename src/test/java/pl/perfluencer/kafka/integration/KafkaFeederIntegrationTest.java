@@ -1,8 +1,8 @@
 package pl.perfluencer.kafka.integration;
 
 import pl.perfluencer.kafka.actors.KafkaProducerActor;
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.util.SerializationType;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
