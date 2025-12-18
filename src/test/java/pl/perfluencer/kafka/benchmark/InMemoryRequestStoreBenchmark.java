@@ -1,6 +1,6 @@
 package pl.perfluencer.kafka.benchmark;
 
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.kafka.util.SerializationType;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;

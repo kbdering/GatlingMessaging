@@ -15,8 +15,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import pl.perfluencer.kafka.actors.KafkaProducerActor;
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import pl.perfluencer.kafka.util.SerializationType;
 

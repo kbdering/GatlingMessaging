@@ -22,7 +22,7 @@ import java.util.function.Function;
 import io.gatling.core.CoreComponents;
 import io.gatling.core.stats.StatsEngine;
 
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.actors.MessageProcessorActor;

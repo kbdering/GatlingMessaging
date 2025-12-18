@@ -13,7 +13,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import pl.perfluencer.kafka.actors.KafkaProducerActor;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import pl.perfluencer.kafka.util.SerializationType;
 

@@ -2,8 +2,8 @@ package pl.perfluencer.kafka.simulations;
 
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import org.apache.kafka.clients.producer.ProducerConfig;

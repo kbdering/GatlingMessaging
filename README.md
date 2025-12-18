@@ -101,7 +101,7 @@ public class KafkaExampleSimulation extends Simulation {
 ## Features
 
 *   **Request-Reply Support**: Handle asynchronous request-reply flows where Gatling sends a request and waits for a correlated response on a different topic.
-*   **Robust State Management**: Use external stores (PostgreSQL, Redis) to track in-flight requests, enabling tests to survive Gatling node restarts or long-running async processes.
+*   **Robust State Management**: Track in-flight requests to match responses. (Persistent distributed stores available in Enterprise edition).
 *   **Flexible Serialization**: Support for String, ByteArray, Protobuf, Avro, and **custom Object payloads**.
 *   **Message Validation**: Powerful `MessageCheck` API to validate response payloads against the original request.
 *   **Fire-and-Forget**: High-performance mode for sending messages without waiting for broker acknowledgement.
@@ -110,7 +110,7 @@ public class KafkaExampleSimulation extends Simulation {
 
 *   **`KafkaProducerActor`**: Handles sending messages to Kafka. It uses the standard Kafka Producer API and supports generic `Object` payloads.
 *   **`KafkaConsumerActor`**: Consumes messages from the response topic. It preserves metadata (headers, timestamp) and passes records to the processor.
-*   **`RequestStore`**: Persists in-flight request data (correlation ID, payload, timestamp). Implementations include `InMemoryRequestStore` (default), `RedisRequestStore`, and `PostgresRequestStore`.
+*   **`RequestStore`**: Persists in-flight request data (correlation ID, payload, timestamp). The core library includes `InMemoryRequestStore`. Enterprise editions support distributed stores like Redis and PostgreSQL.
 *   **`MessageCheck`**: A functional interface for validating the received response against the stored request.
 
 ## Basic Usage: Sending Messages
@@ -132,7 +132,7 @@ import static pl.perfluencer.kafka.javaapi.KafkaDsl.*;
 ### Fire and Forget
 For maximum throughput where you don't need delivery guarantees or response tracking, use "Fire and Forget".
 
-**Note:** In this mode, requests are **NOT** persisted to the Request Store (Redis/Postgres). This means you cannot track response times or verify replies for these messages.
+**Note:** In this mode, requests are **NOT** persisted to the Request Store. This means you cannot track response times or verify replies for these messages.
 
 ```java
 .exec(
@@ -309,112 +309,11 @@ The extension supports generic `Object` payloads. You can pass any object as the
 
 You must configure a backing store for in-flight requests.
 
-#### Option A: PostgreSQL (Recommended for Reliability)
-Requires a `requests` table. See `src/main/resources/sql/create_requests_table.sql` (if available) or the schema below:
+#### In-Memory Store (Default)
+Stores requests in a local dedicated memory structure. This is fast and efficient for single-node tests but does not survive restarts.
 
-```sql
-CREATE TABLE requests (
-    correlation_id UUID PRIMARY KEY,
-    request_key TEXT,
-    request_value_bytes BYTEA,
-    serialization_type VARCHAR(50),
-    transaction_name VARCHAR(255),
-    scenario_name VARCHAR(255),
-    start_time TIMESTAMP,
-    timeout_time TIMESTAMP,
-    expired BOOLEAN DEFAULT FALSE
-);
-
--- Recommended indexes for performance
-CREATE INDEX idx_requests_timeout ON requests(timeout_time) WHERE NOT expired;
-CREATE INDEX idx_requests_scenario ON requests(scenario_name);
-```
-
-**HikariCP Connection Pool Configuration:**
-```java
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
-
-HikariConfig config = new HikariConfig();
-config.setJdbcUrl("jdbc:postgresql://localhost:5432/gatling");
-config.setUsername("gatling");
-config.setPassword("password");
-
-// Connection pool sizing
-config.setMaximumPoolSize(30);        // See sizing guide below
-config.setMinimumIdle(5);             // Keep warm connections
-config.setConnectionTimeout(10000);   // 10s max wait
-config.setIdleTimeout(600000);        // 10min idle timeout
-config.setMaxLifetime(1800000);       // 30min max lifetime
-config.setLeakDetectionThreshold(60000); // Warn if connection held > 60s
-
-// Performance optimizations
-config.addDataSourceProperty("cachePrepStmts", "true");
-config.addDataSourceProperty("prepStmtCacheSize", "250");
-config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-
-HikariDataSource dataSource = new HikariDataSource(config);
-```
-
-**PostgreSQL Connection Pool Sizing:**
-
-| Test Scale | Concurrent Writes | Recommended Pool Size | Postgres `max_connections` |
-|------------|-------------------|----------------------|----------------------------|
-| Small | < 50/sec | 10-20 | 100 |
-| Medium | 50-200/sec | 20-40 | 200 |
-| Large | 200-500/sec | 40-80 | 300 |
-| Very Large | 500+/sec | Consider sharding | 500+ |
-
-**Sizing Formula:**
-```
-Pool Size = (Concurrent Requests) × (Query Duration in sec) + 5 (overhead)
-Example: 100 concurrent × 0.05s query time + 5 = 10 connections
-```
-
-> **Important**: PostgreSQL `max_connections` should be at least 2× the total pool size across all Gatling instances.
-
-#### Option B: Redis (High Performance)
-Requires a Redis instance. Stores payloads as Base64 strings.
-
-**Connection Pool Configuration:**
-```java
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
-
-JedisPoolConfig poolConfig = new JedisPoolConfig();
-poolConfig.setMaxTotal(50);        // Max connections (see sizing guide below)
-poolConfig.setMaxIdle(20);         // Max idle connections
-poolConfig.setMinIdle(5);          // Min idle connections for fast startup
-poolConfig.setTestOnBorrow(true);  // Validate connections
-poolConfig.setBlockWhenExhausted(true);
-poolConfig.setMaxWaitMillis(3000); // Wait max 3s for connection
-
-JedisPool pool = new JedisPool(poolConfig, "localhost", 6379);
-```
-
-**Redis Connection Pool Sizing Recommendations:**
-
-| Test Scale | Users/sec | Recommended `maxTotal` | Notes |
-|------------|-----------|------------------------|-------|
-| Small (Dev) | < 10 | 10-20 | Default settings OK |
-| Medium | 10-100 | 30-50 | Monitor connection waits |
-| Large | 100-500 | 50-100 | Tune `minIdle` to 20-30 |
-| Very Large | 500+ | 100-200 | Consider Redis clustering |
-
-**Sizing Formula:**
-```
-maxTotal = (Peak Users/sec) × (Avg Request Duration in sec) × 1.5 (safety margin)
-Example: 100 users/sec × 0.2s duration × 1.5 = 30 connections
-```
-
-**Performance Tips:**
-- **Monitor**: Track "pool exhausted" errors in logs
-- **Redis Memory**: Set `maxmemory` and use `allkeys-lru` eviction policy
-- **Network**: Ensure low latency to Redis (< 1ms ideal)
-- **Persistence**: Disable RDB/AOF for pure cache use cases
-
-#### Option C: In-Memory Store (Development/Debugging Only)
-Stores requests in a local `ConcurrentHashMap`. **Warning:** Data is lost on restart.
+> [!NOTE]
+> **Enterprise Features**: Persistent distributed storage backends like **Redis** (for high throughput/clustering) and **PostgreSQL** (for durability/audit) are available in the **Gatling Messaging Enterprise** edition. These allow for multi-node Gatling clusters and resilience testing (e.g., verifying that pending requests survive an application restart).
 
 ## Configuration & Performance Tuning
 
@@ -758,8 +657,7 @@ If you encounter `Could not find a valid Docker environment`, ensure your Docker
 ### Available Integration Tests
 
 - **KafkaIntegrationTest**: End-to-end producer-consumer flow.
-- **RedisIntegrationTest**: `RedisRequestStore` operations.
-- **PostgresIntegrationTest**: `PostgresRequestStore` operations.
+
 - **MockKafkaRequestReplyIntegrationTest**: Uses `MockProducer` and `MockConsumer` for fast, dependency-free testing of the actor logic.
 
 ---

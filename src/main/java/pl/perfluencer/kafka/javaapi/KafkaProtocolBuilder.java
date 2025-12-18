@@ -15,8 +15,8 @@ import pl.perfluencer.kafka.actors.KafkaProducerActor;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.actors.MessageProcessorActor;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
-import pl.perfluencer.kafka.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.cache.RequestStore;
+import pl.perfluencer.cache.InMemoryRequestStore;
+import pl.perfluencer.cache.RequestStore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -319,7 +319,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         }
 
         public Function1<Session, Session> onStart() {
-            kafkaProtocol.getRequestStore().startTimeoutMonitoring(new pl.perfluencer.kafka.cache.TimeoutHandler() {
+            kafkaProtocol.getRequestStore().startTimeoutMonitoring(new pl.perfluencer.cache.TimeoutHandler() {
                 @Override
                 public void onTimeout(String correlationId, Map<String, Object> requestData) {
                     long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));

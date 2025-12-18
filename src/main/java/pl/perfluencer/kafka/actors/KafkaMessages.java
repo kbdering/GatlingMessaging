@@ -2,7 +2,7 @@ package pl.perfluencer.kafka.actors;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-import pl.perfluencer.kafka.cache.BatchProcessor;
+import pl.perfluencer.cache.BatchProcessor;
 
 public class KafkaMessages {
     public static final class Poll {

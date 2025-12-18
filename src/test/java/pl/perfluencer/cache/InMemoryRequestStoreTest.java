@@ -1,4 +1,4 @@
-package pl.perfluencer.kafka.cache;
+package pl.perfluencer.cache;
 
 import pl.perfluencer.kafka.util.SerializationType;
 import org.junit.Before;
