@@ -182,7 +182,7 @@ Gatling feeders allow you to drive your Kafka tests with external data sources (
 
 ### CSV Feeder Example
 
-Create a CSV file at `src/test/resources/payment_data.csv`:
+Create a CSV file at `src/test/resources/transaction_data.csv`:
 
 ```csv
 accountId,amount,currency,customerName
@@ -196,17 +196,17 @@ Use it in your simulation:
 ```java
 import static io.gatling.javaapi.core.CoreDsl.*;
 
-public class PaymentSimulation extends Simulation {
+public class transactionSimulation extends Simulation {
     {
         // Load CSV feeder - circular() wraps around when exhausted
-        FeederBuilder<String> csvFeeder = csv("payment_data.csv").circular();
+        FeederBuilder<String> csvFeeder = csv("transaction_data.csv").circular();
         
-        ScenarioBuilder scn = scenario("Payment Processing")
+        ScenarioBuilder scn = scenario("transaction Processing")
             .feed(csvFeeder)  // Inject data into each user's session
             .exec(
                 KafkaDsl.kafkaRequestReply(
-                    "payment-requests",
-                    "payment-responses",
+                    "transaction-requests",
+                    "transaction-responses",
                     session -> session.getString("accountId"),  // Key from CSV
                     session -> String.format(
                         "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\"}",
@@ -215,7 +215,7 @@ public class PaymentSimulation extends Simulation {
                         session.getString("currency")
                     ),
                     SerializationType.STRING,
-                    paymentChecks,
+                    transactionChecks,
                     10, TimeUnit.SECONDS
                 )
             );
@@ -239,12 +239,12 @@ FeederBuilder<Object> randomFeeder = Stream.of(
     )
 ).toFeeder();
 
-ScenarioBuilder scn = scenario("Dynamic Payments")
+ScenarioBuilder scn = scenario("Dynamic transactions")
     .feed(randomFeeder)
     .exec(
         KafkaDsl.kafkaRequestReply(
-            "payments",
-            "payment-responses",
+            "transactions",
+            "transaction-responses",
             session -> session.getString("randomAccountId"),
             session -> String.format(
                 "{\"accountId\":\"%s\",\"amount\":%s,\"ts\":%s}",
@@ -828,18 +828,18 @@ In addition to JMX metrics, the extension reports specific breakdown metrics to 
 | `-store` | **Store Duration**: Time taken to persist the request in the Request Store (Redis/Postgres). High values indicate database bottlenecks. |
 
 **Example:**
-If your request name is `PaymentRequest`:
-- `PaymentRequest`: Total time (e.g., 150ms)
-- `PaymentRequest-send`: Broker ack time (e.g., 20ms)
-- `PaymentRequest-store`: Redis write time (e.g., 2ms)
+If your request name is `transactionRequest`:
+- `transactionRequest`: Total time (e.g., 150ms)
+- `transactionRequest-send`: Broker ack time (e.g., 20ms)
+- `transactionRequest-store`: Redis write time (e.g., 2ms)
 
 You can use standard Gatling assertions on these breakdown metrics:
 ```java
 // Assert that Redis write times are fast
-details("PaymentRequest-store").responseTime().percentile99().lt(10)
+details("transactionRequest-store").responseTime().percentile99().lt(10)
 
 // Assert that Broker ack times are reasonable
-details("PaymentRequest-send").responseTime().percentile99().lt(50)
+details("transactionRequest-send").responseTime().percentile99().lt(50)
 ```
 
 **Configuration:**
