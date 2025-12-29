@@ -6,7 +6,7 @@ This framework is **not** a generic load generator. It is a **Resilience Measure
 
 Traditional performance tools (JMeter, K6, standard Gatling plugins) prioritize **Throughput** (Requests Per Second) at the expense of **Measurement Fidelity**. They are designed to "flood" a system.
 
-This framework is designed to **audit** a system. It prioritizes **Data Integrity**, **Correctness**, and **State Consistency** above raw speed. It is built for scenarios where "losing a message" is an unacceptable failure mode (e.g., Payments, Banking, Critical Infrastructure).
+This framework is designed to **audit** a system. It prioritizes **Data Integrity**, **Correctness**, and **State Consistency** above raw speed. It is built for scenarios where "losing a message" is an unacceptable failure mode (e.g. Critical Infrastructure).
 
 ---
 
@@ -24,7 +24,7 @@ This framework adopts a **"Reference Monitor"** architecture. It acts as an inde
 *   **If the Request Store crashes:** The test is **INVALID**.
     *   We do not attempt to "fail open" or "guess".
     *   If the ledger is compromised, the measurement is compromised. The test must be halted and repeated.
-    *   *Justification:* You cannot audit a bank if the auditor's notebook is on fire.
+    *   *Justification:* You cannot audit if the auditor's notebook is on fire.
 
 ### Contextual Verification: The "Wrong Customer Data" Zero-Tolerance Policy
 
