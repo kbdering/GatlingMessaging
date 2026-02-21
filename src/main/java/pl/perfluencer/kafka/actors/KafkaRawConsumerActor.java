@@ -59,6 +59,7 @@ public class KafkaRawConsumerActor extends AbstractActor {
     public Receive createReceive() {
         return receiveBuilder()
                 .matchEquals(POLL, msg -> poll())
+                .match(pl.perfluencer.kafka.actors.KafkaMessages.Poll.class, msg -> poll())
                 .match(GetMessage.class, msg -> handleGetMessage())
                 .build();
     }

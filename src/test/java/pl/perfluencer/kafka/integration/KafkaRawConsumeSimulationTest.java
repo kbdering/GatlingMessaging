@@ -31,6 +31,6 @@ public class KafkaRawConsumeSimulationTest {
                 "-rf", "target/gatling",
                 "-rd", "raw-consume-test"
         };
-        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
+        Gatling.main(args);
     }
 }

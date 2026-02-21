@@ -55,7 +55,7 @@ public class KafkaJmxMetricsTest {
         };
 
         // Use fromArgs to avoid System.exit
-        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
+        Gatling.main(args);
 
         executor.shutdown();
         executor.awaitTermination(1, TimeUnit.SECONDS);

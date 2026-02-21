@@ -1,14 +1,14 @@
 package pl.perfluencer.kafka.benchmark;
 
 import pl.perfluencer.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.cache.RequestData;
+import pl.perfluencer.common.util.SerializationType;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -51,11 +51,11 @@ public class InMemoryRequestStoreBenchmark {
     public void noTimeout(ThreadState state, Blackhole bh) {
         String id = state.nextId();
         long timeout = TIMEOUTS[ThreadLocalRandom.current().nextInt(TIMEOUTS.length)];
-        store.storeRequest(id, "key", "value", SerializationType.STRING,
-                "txn", "scn", System.currentTimeMillis(), timeout);
+        store.storeRequest(new RequestData(id, "key", "value", SerializationType.STRING,
+                "txn", "scn", System.currentTimeMillis(), timeout, null));
 
         // Immediately remove
-        Map<String, Object> removed = store.getRequest(id);
+        pl.perfluencer.cache.RequestData removed = store.getRequest(id);
         if (removed != null) {
             store.deleteRequest(id);
         }
@@ -66,12 +66,12 @@ public class InMemoryRequestStoreBenchmark {
     public void lowTimeout(ThreadState state, Blackhole bh) {
         String id = state.nextId();
         long timeout = TIMEOUTS[ThreadLocalRandom.current().nextInt(TIMEOUTS.length)];
-        store.storeRequest(id, "key", "value", SerializationType.STRING,
-                "txn", "scn", System.currentTimeMillis(), timeout);
+        store.storeRequest(new RequestData(id, "key", "value", SerializationType.STRING,
+                "txn", "scn", System.currentTimeMillis(), timeout, null));
 
         // 99% success (remove), 1% timeout (leave for background thread)
         if (ThreadLocalRandom.current().nextDouble() > 0.01) {
-            Map<String, Object> removed = store.getRequest(id);
+            pl.perfluencer.cache.RequestData removed = store.getRequest(id);
             if (removed != null) {
                 store.deleteRequest(id);
             }
@@ -83,12 +83,12 @@ public class InMemoryRequestStoreBenchmark {
     public void highTimeout(ThreadState state, Blackhole bh) {
         String id = state.nextId();
         long timeout = TIMEOUTS[ThreadLocalRandom.current().nextInt(TIMEOUTS.length)];
-        store.storeRequest(id, "key", "value", SerializationType.STRING,
-                "txn", "scn", System.currentTimeMillis(), timeout);
+        store.storeRequest(new RequestData(id, "key", "value", SerializationType.STRING,
+                "txn", "scn", System.currentTimeMillis(), timeout, null));
 
         // 1% success (remove), 99% timeout (leave for background thread)
         if (ThreadLocalRandom.current().nextDouble() > 0.99) {
-            Map<String, Object> removed = store.getRequest(id);
+            pl.perfluencer.cache.RequestData removed = store.getRequest(id);
             if (removed != null) {
                 store.deleteRequest(id);
             }

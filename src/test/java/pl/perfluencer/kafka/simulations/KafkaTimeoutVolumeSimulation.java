@@ -27,11 +27,13 @@ public class KafkaTimeoutVolumeSimulation extends Simulation {
 
         ScenarioBuilder scn = scenario("Timeout Volume Scenario")
                         .exec(
-                                        KafkaDsl.kafkaRequestReply("Timeout Request", topic, "reply-topic",
-                                                        session -> "key",
-                                                        "value",
-                                                        null,
-                                                        500, java.util.concurrent.TimeUnit.MILLISECONDS))
+                                        KafkaDsl.kafka("Timeout Request")
+                                                        .requestReply()
+                                                        .requestTopic(topic)
+                                                        .responseTopic("reply-topic")
+                                                        .key(session -> "key")
+                                                        .value(session -> "value")
+                                                        .timeout(500, java.util.concurrent.TimeUnit.MILLISECONDS))
                         .pause(1);
 
         {

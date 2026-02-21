@@ -75,7 +75,7 @@ public class TransactionalProducerIntegrationTest {
         KafkaRequestReplyActionBuilder actionBuilder = KafkaDsl.kafkaRequestReply(
                 "request", topic, "response-topic",
                 s -> "key", s -> "value",
-                pl.perfluencer.kafka.util.SerializationType.STRING,
+                pl.perfluencer.common.util.SerializationType.STRING,
                 Collections.emptyList(),
                 protocol.build(),
                 5, TimeUnit.SECONDS);

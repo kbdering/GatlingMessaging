@@ -1,5 +1,6 @@
 package pl.perfluencer.kafka.integration;
 
+import io.gatling.app.Gatling;
 import pl.perfluencer.kafka.simulations.KafkaTimeoutVolumeSimulation;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -30,6 +31,6 @@ public class KafkaTimeoutVolumeTest {
                 "-rf", "target/gatling",
                 "-rd", "timeout-volume-test"
         };
-        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
+        Gatling.main(args);
     }
 }

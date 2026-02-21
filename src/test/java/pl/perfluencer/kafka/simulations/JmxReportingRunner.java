@@ -1,4 +1,4 @@
-package pl.perfluencer.kafka.simulation;
+package pl.perfluencer.kafka.simulations;
 
 import io.gatling.app.Gatling;
 

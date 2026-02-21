@@ -1,7 +1,8 @@
 package pl.perfluencer.kafka.benchmark;
 
 import pl.perfluencer.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.cache.RequestData;
+import pl.perfluencer.common.util.SerializationType;
 import org.apache.pekko.actor.AbstractActor;
 import org.apache.pekko.actor.ActorSystem;
 import org.apache.pekko.actor.Props;
@@ -131,8 +132,8 @@ public class InMemoryActorBenchmark {
                     .matchEquals("run", msg -> {
                         if (System.currentTimeMillis() < endTime) {
                             String id = UUID.randomUUID().toString();
-                            store.storeRequest(id, "key", "value", SerializationType.STRING,
-                                    "txn", "scn", System.currentTimeMillis(), 10000);
+                            store.storeRequest(new RequestData(id, "key", "value", SerializationType.STRING,
+                                    "txn", "scn", System.currentTimeMillis(), 10000, null));
 
                             // 5% Timeout Rate: Drop the message (don't send to consumer)
                             if (ThreadLocalRandom.current().nextDouble() >= TIMEOUT_RATE) {
@@ -205,8 +206,10 @@ public class InMemoryActorBenchmark {
 
             if (!batch.isEmpty()) {
                 store.processBatchedRecords(batch, new pl.perfluencer.cache.BatchProcessor() {
+
                     @Override
-                    public void onMatch(String correlationId, Map<String, Object> requestData, Object responseValue) {
+                    public void onMatch(String correlationId, pl.perfluencer.cache.RequestData requestData,
+                            Object responseValue) {
                     }
 
                     @Override

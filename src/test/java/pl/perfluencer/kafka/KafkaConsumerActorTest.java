@@ -57,7 +57,7 @@ public class KafkaConsumerActorTest {
                 // The actor automatically polls on preStart, so we should expect a message
                 // The message sent to the router (getRef()) is a Map<String, byte[]>
 
-                expectMsgClass(java.util.List.class);
+                expectMsgClass(org.apache.kafka.clients.consumer.ConsumerRecords.class);
             }
         };
     }

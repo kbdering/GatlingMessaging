@@ -2,6 +2,32 @@
 
 A Gatling extension for load testing Kafka applications, with a focus on **Request-Reply (RPC)** patterns, **Quality of Service (QoS)** measurement, and **resilience testing**.
 
+## Project Structure
+
+This project is organized as a focused Open Source repository for Kafka load testing:
+
+```
+gatling-kafka-oss/
+├── pom.xml                         # Project configuration
+├── README.md                       # This file
+└── src/
+    ├── main/java/pl/perfluencer/
+    │   ├── cache/                   # RequestStore implementations (InMemory default)
+    │   ├── common/                  # Shared utilities (Check API)
+    │   └── kafka/                   # Core Kafka logic
+    └── test/                        # Integration tests and example simulations
+```
+
+### Build Commands
+
+```bash
+# Build the project
+mvn clean package -DskipTests
+
+# Run all tests
+mvn clean test
+```
+
 ## Key Capabilities & Design Philosophy
 
 This framework is designed not just to generate load, but to act as a precise instrument for measuring the **end-to-end quality of service** of your event-driven architecture.
@@ -31,7 +57,7 @@ A critical design goal is to measure the impact of system failures:
 
 ## Quick Start Example
 
-Here is a complete example of a simulation that sends a Protobuf request and verifies the response.
+Here is a complete example using the fluent DSL:
 
 ```java
 package pl.perfluencer.kafka.simulations;
@@ -40,60 +66,41 @@ import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
-import pl.perfluencer.kafka.util.SerializationType;
-import pl.perfluencer.kafka.MessageCheck;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static io.gatling.javaapi.core.CoreDsl.*;
+import static pl.perfluencer.kafka.javaapi.Kafka.kafka;
+import static pl.perfluencer.kafka.MessageCheck.*;
 
 public class KafkaExampleSimulation extends Simulation {
 
     {
         // 1. Configure the Protocol
-        KafkaProtocolBuilder kafkaProtocol = KafkaDsl.kafka()
+        KafkaProtocolBuilder protocol = KafkaDsl.kafka()
                 .bootstrapServers("localhost:9092")
-                .groupId("gatling-consumer-group")
-                .numProducers(1) // Efficient batching with single producer
-                .numConsumers(4) // Parallel processing of responses
-                .producerProperties(Map.of(
-                        ProducerConfig.ACKS_CONFIG, "all",
-                        ProducerConfig.LINGER_MS_CONFIG, "5",
-                        ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4"))
-                .consumerProperties(Map.of(
-                        "auto.offset.reset", "latest"));
+                .numProducers(4)
+                .numConsumers(4);
 
-        // 2. Define Message Checks (Validation)
-        List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
-                "Response Validation",
-                String.class, SerializationType.STRING, // Request type
-                String.class, SerializationType.STRING, // Response type
-                (req, res) -> {
-                    if (req.equals(res)) return Optional.empty(); // Pass
-                    return Optional.of("Mismatch: " + req + " != " + res); // Fail
-                }));
-
-        // 3. Build the Scenario
+        // 2. Build the Scenario with Fluent DSL
         ScenarioBuilder scn = scenario("Kafka Request-Reply Demo")
                 .exec(
-                        KafkaDsl.kafkaRequestReply("request_topic", "response_topic",
-                                session -> UUID.randomUUID().toString(), // Key
-                                session -> "Hello Kafka " + UUID.randomUUID(), // Value (Object)
-                                SerializationType.STRING,
-                                checks,
-                                10, TimeUnit.SECONDS)
+                    kafka("Order Request")
+                        .requestReply()
+                        .requestTopic("orders-request")
+                        .responseTopic("orders-response")
+                        .key(session -> "order-" + session.userId())
+                        .value("{\"orderId\":\"ORD-123\",\"action\":\"CREATE\"}")
+                        .check(echoCheck())                        // Verify echo
+                        .check(jsonPathEquals("$.status", "OK"))   // JSON validation
+                        .check(responseContains("SUCCESS"))        // Contains check
+                        .timeout(10, TimeUnit.SECONDS)
                 );
 
-        // 4. Set up the Load Injection
+        // 3. Set up the Load Injection
         setUp(
-                scn.injectOpen(constantUsersPerSec(10).during(30))
-        ).protocols(kafkaProtocol);
+                scn.injectOpen(constantUsersPerSec(10).during(Duration.ofSeconds(30)))
+        ).protocols(protocol);
     }
 }
 ```
@@ -101,17 +108,50 @@ public class KafkaExampleSimulation extends Simulation {
 ## Features
 
 *   **Request-Reply Support**: Handle asynchronous request-reply flows where Gatling sends a request and waits for a correlated response on a different topic.
-*   **Robust State Management**: Track in-flight requests to match responses. (Persistent distributed stores available in Enterprise edition).
+*   **Robust State Management**: Use external stores (PostgreSQL, Redis) to track in-flight requests, enabling tests to survive Gatling node restarts or long-running async processes.
 *   **Flexible Serialization**: Support for String, ByteArray, Protobuf, Avro, and **custom Object payloads**.
 *   **Message Validation**: Powerful `MessageCheck` API to validate response payloads against the original request.
 *   **Fire-and-Forget**: High-performance mode for sending messages without waiting for broker acknowledgement.
+*   **Multi-Protocol Execution**: Support for registering multiple concurrent Kafka protocols inside a single simulation for multi-topic, multi-serde environments.
+
+## Multi-Protocol Execution
+
+The Gatling Kafka extension supports defining multiple discrete `KafkaProtocol` instances within a single simulation. This is especially useful when your application interacts with different message formats (e.g., JSON and Avro) simultaneously. 
+
+### Single-Topic per Protocol Limitation
+To achieve maximum performance and latency granularity at the transport layer, **each protocol instance is inherently designed to handle a single discrete topic configuration**. 
+
+If you need to load test multiple isolated topics (with independent connection pools, serializers, or Schema Registry settings), you must define separate Gatling protocols and explicitly map them to their corresponding scenarios using `.protocols()`.
+
+```java
+// Protocol 1: JSON on Topica A
+KafkaProtocolBuilder jsonProtocol = KafkaDsl.kafka()
+    .producerProperties(Map.of(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName()));
+
+// Protocol 2: Avro on Topic B
+KafkaProtocolBuilder avroProtocol = KafkaDsl.kafka()
+    .producerProperties(Map.of(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class.getName()));
+
+// Scenario 1 binds to Protocol 1
+ScenarioBuilder jsonScenario = scenario("JSON Flow")
+    .exec(KafkaDsl.kafka("Send JSON").send().topic("topic-a").value("..."));
+
+// Scenario 2 binds to Protocol 2
+ScenarioBuilder avroScenario = scenario("Avro Flow")
+    .exec(KafkaDsl.kafka("Send Avro").send().topic("topic-b").asAvro().value(...));
+
+setUp(
+    jsonScenario.injectOpen(atOnceUsers(10)).protocols(jsonProtocol),
+    avroScenario.injectOpen(atOnceUsers(10)).protocols(avroProtocol)
+);
+```
 
 ## Core Components
 
 *   **`KafkaProducerActor`**: Handles sending messages to Kafka. It uses the standard Kafka Producer API and supports generic `Object` payloads.
-*   **`KafkaConsumerActor`**: Consumes messages from the response topic. It preserves metadata (headers, timestamp) and passes records to the processor.
-*   **`RequestStore`**: Persists in-flight request data (correlation ID, payload, timestamp). The core library includes `InMemoryRequestStore`. Enterprise editions support distributed stores like Redis and PostgreSQL.
-*   **`MessageCheck`**: A functional interface for validating the received response against the stored request.
+*   **`KafkaConsumerThread`**: Consumes messages from the response topic. It preserves metadata (headers, timestamp) and passes records to the processor.
+*   **`RequestStore`**: Persists in-flight request data (correlation ID, payload, timestamp). Implementations include `InMemoryRequestStore` (default), `RedisRequestStore` [ENTERPRISE ONLY], and `PostgresRequestStore` [ENTERPRISE ONLY].
+*   **`MessageCheck`**: Validates the received response against the stored request. Use fluent shortcuts like `MessageCheck.echoCheck()` or `MessageCheck.jsonPathEquals()`.
 
 ## Basic Usage: Sending Messages
 
@@ -125,20 +165,26 @@ import static pl.perfluencer.kafka.javaapi.KafkaDsl.*;
 
 // ... inside your scenario
 .exec(
-    kafka("request_topic", "my-key", "my-value")
+    kafka("Simple Send")
+        .send()
+        .topic("request_topic")
+        .key("my-key")
+        .value("my-value")
 )
 ```
 
 ### Fire and Forget
 For maximum throughput where you don't need delivery guarantees or response tracking, use "Fire and Forget".
 
-**Note:** In this mode, requests are **NOT** persisted to the Request Store. This means you cannot track response times or verify replies for these messages.
+**Note:** In this mode, requests are **NOT** persisted to the Request Store (Redis/Postgres). This means you cannot track response times or verify replies for these messages.
 
 ```java
 .exec(
-    kafka("Fire Event", "events_topic", "key", "value", 
-          false, // waitForAck = false
-          30, TimeUnit.SECONDS)
+    kafka("Fire Event")
+        .send()
+        .topic("events_topic")
+        .key("key")
+        .value("value")
 )
 ```
 
@@ -167,7 +213,11 @@ You can send custom headers with your Kafka messages. This is useful for passing
 
 ```java
 .exec(
-    kafka("Send with Headers", "my_topic", "my_key", "my_value")
+    kafka("Send with Headers")
+        .send()
+        .topic("my_topic")
+        .key("my_key")
+        .value("my_value")
         .headers(Map.of(
             "X-Correlation-ID", session -> UUID.randomUUID().toString(),
             "X-Source", session -> "Gatling-Load-Test",
@@ -182,7 +232,7 @@ Gatling feeders allow you to drive your Kafka tests with external data sources (
 
 ### CSV Feeder Example
 
-Create a CSV file at `src/test/resources/payment_data.csv`:
+Create a CSV file at `src/test/resources/transaction_data.csv`:
 
 ```csv
 accountId,amount,currency,customerName
@@ -196,28 +246,28 @@ Use it in your simulation:
 ```java
 import static io.gatling.javaapi.core.CoreDsl.*;
 
-public class PaymentSimulation extends Simulation {
+public class TransactionSimulation extends Simulation {
     {
         // Load CSV feeder - circular() wraps around when exhausted
-        FeederBuilder<String> csvFeeder = csv("payment_data.csv").circular();
+        FeederBuilder<String> csvFeeder = csv("transaction_data.csv").circular();
         
-        ScenarioBuilder scn = scenario("Payment Processing")
+        ScenarioBuilder scn = scenario("Transaction Processing")
             .feed(csvFeeder)  // Inject data into each user's session
             .exec(
-                KafkaDsl.kafkaRequestReply(
-                    "payment-requests",
-                    "payment-responses",
-                    session -> session.getString("accountId"),  // Key from CSV
-                    session -> String.format(
+                KafkaDsl.kafka("Transaction Request")
+                    .requestReply()
+                    .requestTopic("transaction-requests")
+                    .responseTopic("transaction-responses")
+                    .key(session -> session.getString("accountId"))  // Key from CSV
+                    .value(session -> String.format(
                         "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\"}",
                         session.getString("accountId"),
                         session.getString("amount"),
                         session.getString("currency")
-                    ),
-                    SerializationType.STRING,
-                    paymentChecks,
-                    10, TimeUnit.SECONDS
-                )
+                    ))
+                    .serializationType(String.class, String.class, SerializationType.STRING)
+                    .checks(transactionChecks)
+                    .timeout(10, TimeUnit.SECONDS)
             );
         
         setUp(scn.injectOpen(constantUsersPerSec(10).during(60)))
@@ -239,23 +289,23 @@ FeederBuilder<Object> randomFeeder = Stream.of(
     )
 ).toFeeder();
 
-ScenarioBuilder scn = scenario("Dynamic Payments")
+ScenarioBuilder scn = scenario("Dynamic Transactions")
     .feed(randomFeeder)
     .exec(
-        KafkaDsl.kafkaRequestReply(
-            "payments",
-            "payment-responses",
-            session -> session.getString("randomAccountId"),
-            session -> String.format(
+        KafkaDsl.kafka("Payment Request")
+            .requestReply()
+            .requestTopic("transaction-responses")
+            .responseTopic("payment-responses")
+            .key(session -> session.getString("randomAccountId"))
+            .value(session -> String.format(
                 "{\"accountId\":\"%s\",\"amount\":%s,\"ts\":%s}",
                 session.getString("randomAccountId"),
                 session.getString("randomAmount"),
                 session.getString("timestamp")
-            ),
-            SerializationType.STRING,
-            checks,
-            10, TimeUnit.SECONDS
-        )
+            ))
+            .serializationType(String.class, String.class, SerializationType.STRING)
+            .checks(checks)
+            .timeout(10, TimeUnit.SECONDS)
     );
 ```
 
@@ -294,26 +344,203 @@ The extension supports generic `Object` payloads. You can pass any object as the
     ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MyCustomSerializer.class.getName()
 ))
 
-// In Scenario
+// In Scenariotatus
 .exec(
-    KafkaDsl.kafkaRequestReply("req_topic", "res_topic",
-        session -> "key",
-        session -> new MyCustomObject("data"), // Pass Object directly
-        SerializationType.BYTE_ARRAY, // Or custom enum
-        checks,
-        10, TimeUnit.SECONDS)
+    KafkaDsl.kafka("Custom Payload")
+        .requestReply()
+        .requestTopic("req_topic")
+        .responseTopic("res_topic")
+        .key(session -> "key")
+        .value(session -> new MyCustomObject("data")) // Pass Object directly
+        .serializationType(byte[].class, byte[].class, SerializationType.BYTE_ARRAY) // Or custom enum
+        .checks(checks)
+        .timeout(10, TimeUnit.SECONDS)
 )
+```
+
+### Global Store Configuration
+
+You can fine-tune the internal behavior of the Request Stores (timeouts, batch sizes) using the `storeConfig` DSL. This applies to all store types (InMemory, Redis, Postgres).
+
+```java
+import java.time.Duration;
+
+KafkaProtocolBuilder protocol = kafka()
+    // ... other config ...
+    .storeConfig(config -> config
+        // Update timeout check interval for ALL stores (default: 10s)
+        .timeoutCheckInterval(Duration.ofSeconds(5))
+        
+        // Update batch size for processing timeouts (Redis only for now)
+        .timeoutBatchSize(2000) 
+    );
 ```
 
 ### Setting up a Request Store
 
 You must configure a backing store for in-flight requests.
 
-#### In-Memory Store (Default)
-Stores requests in a local dedicated memory structure. This is fast and efficient for single-node tests but does not survive restarts.
+#### Option A: PostgreSQL [ENTERPRISE ONLY]
+Requires a `requests` table. Recommended for high reliability and audit logs.
 
-> [!NOTE]
-> **Enterprise Features**: Persistent distributed storage backends like **Redis** (for high throughput/clustering) and **PostgreSQL** (for durability/audit) are available in the **Gatling Messaging Enterprise** edition. These allow for multi-node Gatling clusters and resilience testing (e.g., verifying that pending requests survive an application restart).
+```sql
+CREATE TABLE requests (
+    correlation_id UUID PRIMARY KEY,
+    request_key TEXT,
+    request_value_bytes BYTEA,
+    serialization_type VARCHAR(50),
+    transaction_name VARCHAR(255),
+    scenario_name VARCHAR(255),
+    start_time TIMESTAMP,
+    timeout_time TIMESTAMP,
+    expired BOOLEAN DEFAULT FALSE
+);
+
+-- Recommended indexes for performance
+CREATE INDEX idx_requests_timeout ON requests(timeout_time) WHERE NOT expired;
+CREATE INDEX idx_requests_scenario ON requests(scenario_name);
+```
+
+**HikariCP Connection Pool Configuration:**
+```java
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
+HikariConfig config = new HikariConfig();
+config.setJdbcUrl("jdbc:postgresql://localhost:5432/gatling");
+config.setUsername("gatling");
+config.setPassword("password");
+
+// Connection pool sizing
+config.setMaximumPoolSize(30);        // See sizing guide below
+config.setMinimumIdle(5);             // Keep warm connections
+config.setConnectionTimeout(10000);   // 10s max wait
+config.setIdleTimeout(600000);        // 10min idle timeout
+config.setMaxLifetime(1800000);       // 30min max lifetime
+config.setLeakDetectionThreshold(60000); // Warn if connection held > 60s
+
+// Performance optimizations
+config.addDataSourceProperty("cachePrepStmts", "true");
+config.addDataSourceProperty("prepStmtCacheSize", "250");
+config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+
+HikariDataSource dataSource = new HikariDataSource(config);
+```
+
+**PostgreSQL Connection Pool Sizing:**
+
+| Test Scale | Concurrent Writes | Recommended Pool Size | Postgres `max_connections` |
+|------------|-------------------|----------------------|----------------------------|
+| Small | < 50/sec | 10-20 | 100 |
+| Medium | 50-200/sec | 20-40 | 200 |
+| Large | 200-500/sec | 40-80 | 300 |
+| Very Large | 500+/sec | Consider sharding | 500+ |
+
+**Sizing Formula:**
+```
+Pool Size = (Concurrent Requests) × (Query Duration in sec) + 5 (overhead)
+Example: 100 concurrent × 0.05s query time + 5 = 10 connections
+```
+
+> **Important**: PostgreSQL `max_connections` should be at least 2× the total pool size across all Gatling instances.
+
+#### Option B: Redis [ENTERPRISE ONLY]
+High-performance distributed tracking, ideal for horizontally scaled Gatling clusters.
+
+**Connection Pool Configuration:**
+```java
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
+JedisPoolConfig poolConfig = new JedisPoolConfig();
+poolConfig.setMaxTotal(50);        // Max connections (see sizing guide below)
+poolConfig.setMaxIdle(20);         // Max idle connections
+poolConfig.setMinIdle(5);          // Min idle connections for fast startup
+poolConfig.setTestOnBorrow(true);  // Validate connections
+poolConfig.setBlockWhenExhausted(true);
+poolConfig.setMaxWaitMillis(3000); // Wait max 3s for connection
+
+JedisPool pool = new JedisPool(poolConfig, "localhost", 6379);
+```
+
+**Redis Connection Pool Sizing Recommendations:**
+
+| Test Scale | Users/sec | Recommended `maxTotal` | Notes |
+|------------|-----------|------------------------|-------|
+| Small (Dev) | < 10 | 10-20 | Default settings OK |
+| Medium | 10-100 | 30-50 | Monitor connection waits |
+| Large | 100-500 | 50-100 | Tune `minIdle` to 20-30 |
+| Very Large | 500+ | 100-200 | Consider Redis clustering |
+
+**Sizing Formula:**
+```
+maxTotal = (Peak Users/sec) × (Avg Request Duration in sec) × 1.5 (safety margin)
+Example: 100 users/sec × 0.2s duration × 1.5 = 30 connections
+```
+
+**Performance Tips:**
+- **Monitor**: Track "pool exhausted" errors in logs
+- **Redis Memory**: Set `maxmemory` and use `allkeys-lru` eviction policy
+- **Network**: Ensure low latency to Redis (< 1ms ideal)
+- **Persistence**: Disable RDB/AOF for pure cache use cases
+
+#### Option C: High-Throughput Buffered Store (Write-Behind) [ENTERPRISE ONLY]
+For extremely high-throughput scenarios where the latency of synchronous DB/Redis writes becomes a bottleneck for the producer, the Enterprise edition provides a `BufferedRequestStore` with parallel background workers.
+
+**How it works:**
+1.  **Write Buffer**: Requests are instantly queued in memory (non-blocking).
+2.  **Parallel Flush**: A pool of background workers flushes requests to the persistent layer (L2) in optimized batches.
+3.  **Retry Logic**: The standard distributed retry mechanism handles the race condition where a fast response arrives before the request is flushed.
+
+```java
+import pl.perfluencer.cache.BufferedRequestStore;
+
+// 1. Create the persistent L2 store (Postgres or Redis)
+RequestStore l2Store = new PostgresRequestStore(dataSource);
+
+// 2. Wrap it with the Buffered Store
+// parallelWorkers = 4 (default)
+// batchSize = 500 records
+// batchLatency = 50ms (max wait before flush)
+RequestStore store = new BufferedRequestStore(l2Store, 500, 50);
+```
+
+**Configuration & Tuning:**
+
+*   **`batchSize`** (e.g., 500): Larger batches improve database throughput but increase memory usage.
+*   **`batchTimeMillis`** (e.g., 50ms): The "linger" time.
+    *   *Relationship to Minimum Service Time*: Ideally, set this lower than your application's fastest expected response time.
+    *   Valid responses arriving *faster* than this window will rely on the Retry Loop (wait and retry).
+*   **`parallelism`**: Number of concurrent writer threads. Set this based on your database connection pool size.
+    *   `new BufferedRequestStore(l2Store, 500, 50, 8, 200)` -> 8 parallel workers.
+
+**Critical Safety features:**
+*   **Flush Warning**: If a batch flush takes longer than the safe retry window (default 200ms), a warning is logged: `SLOW FLUSH DETECTED`.
+*   **Strict Error Handling**: If the persistence layer fails (e.g., DB down), the store defaults to a **Strict Stop** policy, executing `System.exit(1)` to prevent invalid test results.
+
+### Option D: In-Memory Store (OSS Default)
+Stores requests in a local `ConcurrentHashMap`. **Warning:** Data is lost on restart. Perfect for development and debugging.
+
+### Asynchronous Match Retry
+
+When using asynchronous storage (like the Buffered Request Store) or dealing with distributed system latency, a response might arrive before the request is fully persisted and visible to the consumer. To handle this, the framework implements an efficient retry mechanism.
+
+You can configure the retry behavior in the protocol:
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    // ... other config ...
+    .retryBackoff(Duration.ofMillis(50)) // Wait 50ms before retrying a check
+    .maxRetries(3);                      // Retry 3 times before failing
+```
+
+**Default values:**
+*   `retryBackoff`: 50ms
+*   `maxRetries`: 3
+
+**When to tune:**
+*   **Increase `retryBackoff`** if you are seeing "Request not found" errors but the database is healthy (persistence lag > 50ms).
+*   **Increase `maxRetries`** if you have very high jitter in your L2 store write times.
 
 ## Configuration & Performance Tuning
 
@@ -413,38 +640,185 @@ KafkaProtocolBuilder protocol = kafka()
 
 Validating that your system returns the *correct* data is just as important as measuring how fast it is. This section provides examples of how to verify response content.
 
-### 1. Basic String Assertions
-If your messages are simple strings (e.g., JSON or XML as text), you can use basic string manipulation.
+### 1. Fluent Checks (New Gatling-Style API)
+
+The recommended approach is to use the Gatling-style fluent check chain: **extractor → find strategy → validator**.
+This API mirrors Gatling's HTTP checks, making it intuitive for experienced Gatling users.
+
+```java
+import static pl.perfluencer.common.checks.Checks.*;
+
+// ... inside your scenario
+.check(
+    // JSONPath Extraction
+    jsonPath("$.status").find().is("OK"),
+    jsonPath("$.amount").ofDouble().gte(100.0),
+    jsonPath("$.items[*]").count().is(3),
+    jsonPath("$.items[*]").findAll().satisfies(items -> items.contains("Widget")),
+    
+    // Regex Extraction
+    regex("orderId=([\\w-]+)").find(1).exists(),
+    regex("amount=(\\d+)").find(1).transform(Integer::parseInt).gt(100),
+    
+    // XPath (XML) Extraction
+    xpath("/response/status").find().is("OK"),
+    xpath("/response/items/item").count().gt(0),
+    
+    // Substring and Body
+    substring("SUCCESS").find().exists(),
+    bodyString().transform(String::length).gt(10)
+)
+```
+
+#### Complex Request-to-Response Comparisons
+
+You can easily compare values extracted from the *response* against values extracted from the *original request* using the typed `field()` extractor or `MessageCheckBuilder`. This is crucial for verifying that the system processed the correct data.
+
+```java
+import static pl.perfluencer.common.checks.Checks.field;
+
+// Verify that the response's 'echoId' matches the request's 'reqId'
+.check(
+    field(MyResponse.class).assertEquals(MyRequest::getReqId, MyResponse::getEchoId)
+)
+
+// Compare specific parsed values using the builder
+.check(
+    MessageCheckBuilder.strings()
+        .named("Cross-Message Amount Check")
+        .check((req, res) -> {
+            double reqAmount = extractAmount(req);
+            double resAmount = extractAmount(res);
+            return reqAmount == resAmount 
+                ? Optional.empty() 
+                : Optional.of("Amount mismatch: Req=" + reqAmount + ", Res=" + resAmount);
+        })
+)
+```
+
+### 2. Quick Check Shortcuts (Legacy)
+
+For absolute simplicity, you can still use the legacy static shortcuts, though the Fluent API is preferred for new tests:
+
+```java
+import static pl.perfluencer.common.checks.Checks.*;
+
+// Echo check - verify response equals request exactly
+var echoCheck = echoCheck();
+
+// Basic string checks
+var containsCheck = responseContains("SUCCESS");
+var notEmptyCheck = responseNotEmpty();
+```
+
+| Method | Description |
+|--------|-------------|
+| `echoCheck()` | Verify response equals request |
+| `responseContains(text)` | Verify response contains substring |
+| `responseEquals(value)` | Verify response equals value |
+| `responseMatches(regex)` | Verify response matches pattern |
+| `responseNotEmpty()` | Verify response is not null/empty |
+
+### 2. Custom Checks with Builder
+
+For validation logic that goes beyond the shortcuts, use `MessageCheckBuilder`:
+
+```java
+import pl.perfluencer.common.checks.MessageCheckBuilder;
+
+// Type-safe field comparison (great for Protobuf/POJOs)
+var orderCheck = MessageCheckBuilder.forTypes(OrderRequest.class, OrderResponse.class)
+    .named("Order ID Match")
+    .verifyFieldEquals(OrderRequest::getOrderId, OrderResponse::getOrderIdEcho);
+
+// Custom validation logic
+var businessCheck = MessageCheckBuilder.strings()
+    .named("Business Rules")
+    .check((req, res) -> {
+        if (res.contains("ERROR")) {
+            return Optional.of("Response contains error: " + res);
+        }
+        if (res.length() < req.length()) {
+            return Optional.of("Response shorter than request");
+        }
+        return Optional.empty(); // Success
+    });
+```
+
+### 3. Using Checks in Simulations
+
+Convert checks to `MessageCheck` for use with Kafka or `MqMessageCheck` for MQ:
+
+```java
+// Kafka - static methods on MessageCheck
+MessageCheck<String, String> check = MessageCheck.echoCheck();
+MessageCheck<String, String> jsonCheck = MessageCheck.jsonPathEquals("$.id", "123");
+
+// MQ - static methods on MqMessageCheck
+MqMessageCheck<String, String> mqCheck = MqMessageCheck.responseContains("SUCCESS");
+
+// Or convert from builder result
+MessageCheck<String, String> custom = MessageCheck.from(
+    MessageCheckBuilder.strings().named("My Check").verify(String::equals)
+);
+```
+
+---
+
+### Check Scoping & Isolation
+
+Checks defined in a `requestReply` block are **strictly scoped** to that specific request definition. They are not applied globally to all messages.
+
+When you define multiple request types in the same simulation:
+
+```java
+// Request A: Expects "Status: OK"
+kafka("CreateUser")
+    .requestReply()
+    .check(jsonPath("$.status").is("OK"))
+
+// Request B: Expects "Status: CREATED"
+kafka("CreateAccount")
+    .requestReply()
+    .check(jsonPath("$.status").is("CREATED"))
+```
+
+*   A response correlated to the "CreateUser" request will **only** execute the checks defined for "CreateUser".
+*   A response correlated to the "CreateAccount" request will **only** execute the checks defined for "CreateAccount".
+
+This isolation is handled automatically by the `RequestStore`. When a response arrives, the system looks up the original request by its `correlationId` and retrieves only the checks associated with that specific transaction type.
+
+---
+
+### Advanced Checks
+
+For complex scenarios requiring full control over serialization and validation logic.
+
+#### Raw Constructor (Verbose)
+
+When you need explicit control over serialization types (e.g., mixing Protobuf request with JSON response):
 
 ```java
 List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
     "Content Check",
-    String.class, SerializationType.STRING,
-    String.class, SerializationType.STRING,
+    String.class, SerializationType.STRING,  // Request type
+    String.class, SerializationType.STRING,  // Response type
     (req, res) -> {
-        // Example 1: Check for a specific substring
         if (!res.contains("\"status\":\"success\"")) {
             return Optional.of("Response missing success status");
         }
-        
-        // Example 2: Check response length
-        if (res.length() < 10) {
-            return Optional.of("Response too short");
-        }
-
-        return Optional.empty(); // Success
+        return Optional.empty();
     }
 ));
 ```
 
-### 2. JSON Extraction & Validation
-For JSON responses, it's best to parse the string to avoid fragile text matching. You can use libraries like Jackson or Gson (add them to your dependencies).
+#### Jackson/Gson JSON Parsing
+
+For complex JSON structures where JSONPath isn't sufficient:
 
 ```java
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-// ...
 
 ObjectMapper mapper = new ObjectMapper();
 
@@ -456,13 +830,13 @@ List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
         try {
             JsonNode root = mapper.readTree(res);
             
-            // Check a specific field value
+            // Complex nested validation
             int userId = root.path("user").path("id").asInt();
             if (userId <= 0) {
                 return Optional.of("Invalid User ID: " + userId);
             }
             
-            // Check array size
+            // Array validation
             if (root.path("items").size() < 1) {
                 return Optional.of("Items array is empty");
             }
@@ -475,7 +849,110 @@ List<MessageCheck<?, ?>> checks = List.of(new MessageCheck<>(
 ));
 ```
 
-### 3. Extracting Values for Correlation
+
+
+### 4. Session-Aware Message Checks [ENTERPRISE ONLY]
+
+> [!IMPORTANT]
+> **Enterprise Feature**: Session-Aware Message Checks require the Enterprise edition with external Request Stores (Redis, PostgreSQL).
+
+For scenarios with large payloads where storing the full request is memory-intensive, use `SessionAwareMessageCheck` to validate responses against **session variables** instead of the full payload.
+
+**Key Benefits:**
+- **Memory Efficient**: Store only the fields you need (e.g., `accountId`, `amount`) instead of entire payloads
+- **Faster Lookups**: Smaller session variable maps are quicker to serialize/deserialize
+- **Flexible Validation**: Access any session variable in your check logic
+
+#### Usage Example
+
+```java
+import pl.perfluencer.kafka.SessionAwareMessageCheck;
+import pl.perfluencer.common.util.SerializationType;
+import java.util.Map;
+import java.util.Optional;
+
+// Define a session-aware check
+SessionAwareMessageCheck<String> accountCheck = new SessionAwareMessageCheck<>(
+    "Account ID Check",
+    String.class, SerializationType.STRING,
+    (sessionVars, response) -> {
+        String expectedAccountId = sessionVars.get("accountId");
+        if (response.contains("\"accountId\":\"" + expectedAccountId + "\"")) {
+            return Optional.empty(); // Success
+        }
+        return Optional.of("Account ID mismatch: expected " + expectedAccountId);
+    });
+
+// Check multiple session variables
+SessionAwareMessageCheck<String> transactionCheck = new SessionAwareMessageCheck<>(
+    "Transaction Validation",
+    String.class, SerializationType.STRING,
+    (sessionVars, response) -> {
+        String accountId = sessionVars.get("accountId");
+        String amount = sessionVars.get("amount");
+        String currency = sessionVars.get("currency");
+        
+        if (!response.contains(accountId)) {
+            return Optional.of("Account ID not found in response");
+        }
+        if (!response.contains(amount)) {
+            return Optional.of("Amount not found in response");
+        }
+        return Optional.empty();
+    });
+```
+
+#### When to Use Session-Aware Checks
+
+| Scenario | Use `MessageCheck` | Use `SessionAwareMessageCheck` |
+|----------|-------------------|-------------------------------|
+| Small payloads (<1KB) | ✅ Recommended | Overkill |
+| Large payloads (>10KB) | Memory intensive | ✅ Recommended |
+| Need full request access | ✅ Required | Only session vars available |
+| High-volume tests | May impact store performance | ✅ Optimized |
+
+> [!TIP]
+> **Best Practice**: When using session-aware checks, store only the fields needed for validation. Common fields include: `accountId`, `transactionId`, `correlationId`, `amount`, `timestamp`.
+
+### Persisting Session Variables [ENTERPRISE ONLY]
+
+When using `SessionAwareMessageCheck`, you need to ensure the relevant session variables are persisted in the `RequestStore` alongside the request. By default, no session variables are stored.
+
+You can specify which variables to persist using the `.storeSession()` method in the DSL:
+
+```java
+KafkaDsl.kafka("Request")
+    .requestReply()
+    .requestTopic("request_topic")
+    .responseTopic("response_topic")
+    // ... basic config ...
+    .storeSession("accountId", "amount", "transactionId") // Persist these keys
+    .checks(...)
+```
+
+These variables will then be available in your `SessionAwareMessageCheck` logic.
+
+### Payload Storage Optimization [ENTERPRISE ONLY]
+
+For high-throughput tests or large payloads, storing the entire request body in the `RequestStore` (Redis/Postgres) can be a bottleneck and consume excessive storage.
+
+If you are using **Session-Aware Message Checks** and do not need the full payload for verification (e.g., you only need the `accountId` session variable), you can disable payload storage:
+
+```java
+KafkaDsl.kafka("Request")
+    .requestReply()
+    .requestTopic("request_topic")
+    .responseTopic("response_topic")
+    .key("key")
+    .value("payload")
+    .storeSession("accountId")
+    .skipPayloadStorage() // Do NOT store the request body in Redis/DB
+    .checks(...)
+```
+
+This significantly reduces I/O and storage requirements while keeping the correlation and session data needed for validation.
+
+### 5. Extracting Values for Correlation
 Sometimes you need to extract a value from the response to use in a subsequent request (though standard Request-Reply handles the correlation ID automatically).
 
 If you need to extract a value from a JSON response body to correlate (instead of using headers), use the `JsonPathExtractor`:
@@ -516,7 +993,7 @@ KafkaProtocolBuilder protocol = kafka()
 ```
 
 #### 3. Body/Payload Extraction
-If the Correlation ID is embedded within the message payload (e.g., inside a JSON body), uses `correlationExtractor` with a specific implementation like `JsonPathExtractor`.
+If the Correlation ID is embedded within the message payload (e.g., inside a JSON body), use `correlationExtractor` with a specific implementation like `JsonPathExtractor`.
 
 ```java
 KafkaProtocolBuilder protocol = kafka()
@@ -586,12 +1063,15 @@ KafkaProtocolBuilder protocol = kafka()
 
 // In your scenario
 .exec(
-    kafkaRequestReply("avro-req", "avro-res",
-        session -> "key",
-        session -> new User("Alice", 30), // Specific Avro Record
-        SerializationType.AVRO, // Or BYTE_ARRAY if serializer handles it
-        checks,
-        10, TimeUnit.SECONDS)
+    KafkaDsl.kafka("Avro Request")
+        .requestReply()
+        .requestTopic("avro-req")
+        .responseTopic("avro-res")
+        .key(session -> "key")
+        .value(session -> new User("Alice", 30)) // Specific Avro Record
+        .serializationType(String.class, User.class, SerializationType.AVRO) // Or BYTE_ARRAY if serializer handles it
+        .checks(checks)
+        .timeout(10, TimeUnit.SECONDS)
 )
 ```
 
@@ -612,12 +1092,15 @@ KafkaProtocolBuilder protocol = kafka()
 
 // In your scenario
 .exec(
-    kafkaRequestReply("proto-req", "proto-res",
-        session -> "key",
-        session -> Person.newBuilder().setName("Bob").build(),
-        SerializationType.PROTOBUF,
-        checks,
-        10, TimeUnit.SECONDS)
+    KafkaDsl.kafka("Protobuf Request")
+        .requestReply()
+        .requestTopic("proto-req")
+        .responseTopic("proto-res")
+        .key(session -> "key")
+        .value(session -> Person.newBuilder().setName("Bob").build())
+        .serializationType(String.class, Person.class, SerializationType.PROTOBUF)
+        .checks(checks)
+        .timeout(10, TimeUnit.SECONDS)
 )
 ```
 
@@ -648,7 +1131,7 @@ This project includes comprehensive integration tests using [Testcontainers](htt
 ### Running Integration Tests Locally
 
 1. **Install Testcontainers Desktop** (Recommended) or configure a remote Docker daemon.
-2. **Enable Tests**: Remove `@Ignore` annotations from test classes in `src/test/java/io/github/kbdering/kafka/integration/`.
+2. **Enable Tests**: Remove `@Ignore` annotations from test classes in `src/test/java/pl/perfluencer/kafka/integration/`.
 3. **Run**: `mvn test`
 
 **Troubleshooting:**
@@ -657,8 +1140,9 @@ If you encounter `Could not find a valid Docker environment`, ensure your Docker
 ### Available Integration Tests
 
 - **KafkaIntegrationTest**: End-to-end producer-consumer flow.
-
-- **MockKafkaRequestReplyIntegrationTest**: Uses `MockProducer` and `MockConsumer` for fast, dependency-free testing of the actor logic.
+- **RedisIntegrationTest**: `RedisRequestStore` operations [ENTERPRISE ONLY].
+- **PostgresIntegrationTest**: `PostgresRequestStore` operations [ENTERPRISE ONLY].
+- **MockKafkaRequestReplyIntegrationTest**: Uses `MockProducer` and `MockConsumer` for fast, dependency-free testing of the logic.
 
 ---
 
@@ -828,18 +1312,18 @@ In addition to JMX metrics, the extension reports specific breakdown metrics to 
 | `-store` | **Store Duration**: Time taken to persist the request in the Request Store (Redis/Postgres). High values indicate database bottlenecks. |
 
 **Example:**
-If your request name is `PaymentRequest`:
-- `PaymentRequest`: Total time (e.g., 150ms)
-- `PaymentRequest-send`: Broker ack time (e.g., 20ms)
-- `PaymentRequest-store`: Redis write time (e.g., 2ms)
+If your request name is `TransactionRequest`:
+- `TransactionRequest`: Total time (e.g., 150ms)
+- `TransactionRequest-send`: Broker ack time (e.g., 20ms)
+- `TransactionRequest-store`: Redis write time (e.g., 2ms)
 
 You can use standard Gatling assertions on these breakdown metrics:
 ```java
 // Assert that Redis write times are fast
-details("PaymentRequest-store").responseTime().percentile99().lt(10)
+details("TransactionRequest-store").responseTime().percentile99().lt(10)
 
 // Assert that Broker ack times are reasonable
-details("PaymentRequest-send").responseTime().percentile99().lt(50)
+details("TransactionRequest-send").responseTime().percentile99().lt(50)
 ```
 
 **Configuration:**
@@ -901,12 +1385,15 @@ KafkaProtocolBuilder protocol = kafka()
 
 ScenarioBuilder chaosScenario = scenario("Broker Outage Test")
     .exec(
-        kafkaRequestReply("request-topic", "response-topic",
-            session -> UUID.randomUUID().toString(),
-            session -> generateTestPayload(),
-            SerializationType.STRING,
-            validationChecks,
-            30, TimeUnit.SECONDS)
+        KafkaDsl.kafka("Outage Test")
+            .requestReply()
+            .requestTopic("request-topic")
+            .responseTopic("response-topic")
+            .key(session -> UUID.randomUUID().toString())
+            .value(session -> generateTestPayload())
+            .serializationType(String.class, String.class, SerializationType.STRING)
+            .checks(validationChecks)
+            .timeout(30, TimeUnit.SECONDS)
     );
 
 setUp(
@@ -951,14 +1438,17 @@ KafkaProtocolBuilder protocol = kafka()
 ScenarioBuilder rebalanceScenario = scenario("Consumer Rebalance Test")
     .forever()
     .exec(
-        kafkaRequestReply("orders-in", "orders-out",
-            session -> "order-" + session.userId(),
-            session -> createOrder(),
-            SerializationType.JSON,
-            orderValidationChecks,
-            45, TimeUnit.SECONDS) // Higher timeout for rebalance
-        .pace(Duration.ofSeconds(1)) // 1 request per second per user
-    );
+        KafkaDsl.kafka("Rebalance Test")
+            .requestReply()
+            .requestTopic("orders-in")
+            .responseTopic("orders-out")
+            .key(session -> "order-" + session.userId())
+            .value(session -> createOrder())
+            .serializationType(String.class, String.class, SerializationType.JSON)
+            .checks(orderValidationChecks)
+            .timeout(45, TimeUnit.SECONDS) // Higher timeout for rebalance
+    )
+    .pace(Duration.ofSeconds(1)); // 1 request per second per user
 
 setUp(
     rebalanceScenario.injectOpen(
@@ -1013,12 +1503,15 @@ KafkaProtocolBuilder protocol = kafka()
 // Use consistent partitioning to target specific partition
 ScenarioBuilder partitionChaos = scenario("Leader Election Test")
     .exec(
-        kafkaRequestReply("test-topic", "response-topic",
-            session -> "fixed-key-partition-0", // Always partition 0
-            session -> "test-message-" + System.nanoTime(),
-            SerializationType.STRING,
-            checks,
-            20, TimeUnit.SECONDS)
+        KafkaDsl.kafka("Leader Election")
+            .requestReply()
+            .requestTopic("test-topic")
+            .responseTopic("response-topic")
+            .key(session -> "fixed-key-partition-0") // Always partition 0
+            .value(session -> "test-message-" + System.nanoTime())
+            .serializationType(String.class, String.class, SerializationType.STRING)
+            .checks(checks)
+            .timeout(20, TimeUnit.SECONDS)
     );
 ```
 
@@ -1064,12 +1557,15 @@ KafkaProtocolBuilder protocol = kafka()
 
 ScenarioBuilder crashRecoveryScenario = scenario("Crash Recovery Test")
     .exec(
-        kafkaRequestReply("crash-test-in", "crash-test-out",
-            session -> UUID.randomUUID().toString(),
-            session -> createComplexTransaction(),
-            SerializationType.PROTOBUF,
-            transactionChecks,
-            120, TimeUnit.SECONDS) // Long timeout for crash recovery
+        KafkaDsl.kafka("Crash Recovery")
+            .requestReply()
+            .requestTopic("crash-test-in")
+            .responseTopic("crash-test-out")
+            .key(session -> UUID.randomUUID().toString())
+            .value(session -> createComplexTransaction())
+            .serializationType(String.class, String.class, SerializationType.PROTOBUF)
+            .checks(transactionChecks)
+            .timeout(120, TimeUnit.SECONDS) // Long timeout for crash recovery
     );
 ```
 
@@ -1197,11 +1693,20 @@ Don't worry about Redis or Postgres yet. The framework uses an `InMemoryRequestS
 *   **What it does**: Keeps track of your requests in the memory of the running Java process.
 *   **Limitation**: If you stop the test, the data is gone. But for writing and debugging your first script, this is perfect.
 
-### 2. Understanding `MessageCheck` (The "Scary" Part)
-You will see code like `new MessageCheck<>(..., String.class, ...)` and it looks verbose. Think of it this way:
-*   **Inputs**: You need to tell the framework "I sent a String" and "I expect a String back".
-*   **Logic**: The lambda `(req, res) -> ...` is just a function where you compare the two.
-*   **Tip**: Copy-paste the examples in this README! You rarely need to write this from scratch.
+### 2. Understanding `MessageCheck` (The Easy Way)
+The old constructor-based MessageCheck was verbose. Now you have **fluent shortcuts**:
+
+```java
+// Old way (verbose)
+new MessageCheck<>("Check", String.class, STRING, String.class, STRING, (req, res) -> ...);
+
+// New way (one-liner!)
+MessageCheck.echoCheck()                    // Request == Response
+MessageCheck.responseContains("SUCCESS")    // Response contains text
+MessageCheck.jsonPathEquals("$.id", "123")  // JSONPath check
+```
+
+**Tip**: Start with `MessageCheck.echoCheck()` or `MessageCheck.jsonPathEquals()` — they cover 90% of use cases!
 
 ### 3. Fire-and-Forget vs. Request-Reply
 *   **Use Request-Reply (Default)** when you need to verify that your application *actually processed* the message correctly. This is for **Quality**.

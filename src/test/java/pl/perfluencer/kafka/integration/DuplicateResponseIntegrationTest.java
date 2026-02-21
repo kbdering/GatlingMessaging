@@ -3,10 +3,10 @@ package pl.perfluencer.kafka.integration;
 import io.gatling.commons.stats.Status;
 import io.gatling.commons.util.Clock;
 import io.gatling.core.stats.StatsEngine;
-import pl.perfluencer.kafka.actors.KafkaProducerActor;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import pl.perfluencer.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.cache.RequestData;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.MessageProcessor;
 import pl.perfluencer.cache.RequestStore;
@@ -83,8 +83,9 @@ public class DuplicateResponseIntegrationTest {
         String transactionName = "DuplicateTest";
 
         // 1. Store the request
-        requestStore.storeRequest(correlationId, requestKey, requestValue, SerializationType.STRING,
-                transactionName, "Scenario", System.currentTimeMillis(), 30000);
+        requestStore.storeRequest(new RequestData(
+                correlationId, requestKey, requestValue, SerializationType.STRING,
+                transactionName, "Scenario", System.currentTimeMillis(), 30000, null));
 
         // 2. Create TWO identical response records
         ConsumerRecord<String, Object> record1 = createResponseRecord(correlationId, requestKey, "resp-1");

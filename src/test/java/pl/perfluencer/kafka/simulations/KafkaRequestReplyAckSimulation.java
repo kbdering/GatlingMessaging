@@ -4,7 +4,7 @@ import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import java.time.Duration;
@@ -44,14 +44,17 @@ public class KafkaRequestReplyAckSimulation extends Simulation {
 
                 ScenarioBuilder scn = scenario("Kafka Request-Reply Ack Demo")
                                 .exec(
-                                                KafkaDsl.kafkaRequestReply("request_ack", "request_topic",
-                                                                "response_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> "Hello Kafka " + UUID.randomUUID(),
-                                                                SerializationType.STRING,
-                                                                checks,
-                                                                true, // waitForAck = true
-                                                                10, TimeUnit.SECONDS));
+                                                KafkaDsl.kafka("request_ack")
+                                                                .requestReply()
+                                                                .requestTopic("request_topic")
+                                                                .responseTopic("response_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> "Hello Kafka " + UUID.randomUUID())
+                                                                .serializationType(String.class, String.class,
+                                                                                SerializationType.STRING)
+                                                                .checks(checks)
+                                                                .waitForAck(true)
+                                                                .timeout(10, TimeUnit.SECONDS));
 
                 setUp(
                                 scn.injectOpen(constantUsersPerSec(1).during(5))).protocols(kafkaProtocol);

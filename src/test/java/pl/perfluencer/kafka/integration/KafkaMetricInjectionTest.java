@@ -1,5 +1,6 @@
 package pl.perfluencer.kafka.integration;
 
+import io.gatling.app.Gatling;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -30,6 +31,6 @@ public class KafkaMetricInjectionTest {
                 "--results-folder", "target/gatling"
         };
         // Use fromArgs to avoid System.exit
-        io.gatling.app.Gatling$.MODULE$.fromArgs(args);
+        Gatling.main(args);
     }
 }

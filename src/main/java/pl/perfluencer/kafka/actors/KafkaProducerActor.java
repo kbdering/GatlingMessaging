@@ -187,9 +187,12 @@ public class KafkaProducerActor extends AbstractActor {
         }
     }
 
+    private static final Status STATUS_OK = Status.apply("OK");
+    private static final Status STATUS_KO = Status.apply("KO");
+
     private void logMetrics(ProduceMessage message, long start, long end, Exception exception) {
         if (statsEngine != null && message.requestName != null) {
-            Status status = exception == null ? Status.apply("OK") : Status.apply("KO");
+            Status status = exception == null ? STATUS_OK : STATUS_KO;
             Option<String> messageOpt = exception == null ? Option.empty() : Option.apply(exception.getMessage());
             statsEngine.logResponse(
                     message.scenario,

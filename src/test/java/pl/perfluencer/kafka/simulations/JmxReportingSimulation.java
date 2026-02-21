@@ -1,4 +1,4 @@
-package pl.perfluencer.kafka.simulation;
+package pl.perfluencer.kafka.simulations;
 
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;

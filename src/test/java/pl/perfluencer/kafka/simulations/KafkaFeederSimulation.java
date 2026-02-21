@@ -8,7 +8,7 @@ import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import org.apache.kafka.clients.producer.ProducerConfig;
 
 import java.time.Duration;
@@ -37,7 +37,7 @@ public class KafkaFeederSimulation extends Simulation {
                 // CSV Feeder - reads from src/test/resources/payment_data.csv
                 // Each row becomes a session variable accessible via
                 // session.getString("columnName")
-                FeederBuilder<String> csvFeeder = csv("payment_data.csv").circular();
+                FeederBuilder<String> csvFeeder = csv("transaction_data.csv").circular();
 
                 // ==================== PROTOCOL CONFIGURATION ====================
 
@@ -60,9 +60,9 @@ public class KafkaFeederSimulation extends Simulation {
                 // ==================== MESSAGE VALIDATION ====================
 
                 // Validate that the response contains the expected account ID from the feeder
-                List<MessageCheck<?, ?>> paymentChecks = List.of(
+                List<MessageCheck<?, ?>> transactionChecks = List.of(
                                 new MessageCheck<>(
-                                                "Payment Response Validation",
+                                                "Transaction Response Validation",
                                                 String.class, SerializationType.STRING,
                                                 String.class, SerializationType.STRING,
                                                 (request, response) -> {
@@ -73,28 +73,29 @@ public class KafkaFeederSimulation extends Simulation {
                                                         }
                                                         if (!response.contains("\"status\":\"success\"")) {
                                                                 return Optional.of(
-                                                                                "Payment not successful: " + response);
+                                                                                "Transaction not successful: "
+                                                                                                + response);
                                                         }
                                                         return Optional.empty(); // Check passed
                                                 }));
 
                 // ==================== SCENARIO WITH CSV FEEDER ====================
 
-                ScenarioBuilder csvFeederScenario = scenario("Payment Processing with CSV Data")
+                ScenarioBuilder csvFeederScenario = scenario("Transaction Processing with CSV Data")
                                 .feed(csvFeeder) // Inject CSV data into each user's session
                                 .exec(session -> {
                                         // Log the feeder data (for debugging)
                                         String accountId = session.getString("accountId");
                                         String amount = session.getString("amount");
                                         String currency = session.getString("currency");
-                                        System.out.println("Processing payment: " + accountId + " - " + amount + " "
+                                        System.out.println("Processing transaction: " + accountId + " - " + amount + " "
                                                         + currency);
                                         return session;
                                 })
                                 .exec(
                                                 KafkaDsl.kafkaRequestReply(
-                                                                "payment-requests", // Request topic
-                                                                "payment-responses", // Response topic
+                                                                "transaction-requests", // Request topic
+                                                                "transaction-responses", // Response topic
                                                                 session -> session.getString("accountId"), // Key from
                                                                                                            // feeder
                                                                 session -> String.format(
@@ -104,13 +105,13 @@ public class KafkaFeederSimulation extends Simulation {
                                                                                 session.getString("currency"),
                                                                                 UUID.randomUUID().toString()),
                                                                 SerializationType.STRING,
-                                                                paymentChecks,
+                                                                transactionChecks,
                                                                 10, TimeUnit.SECONDS));
 
                 // ==================== SCENARIO WITH DYNAMIC DATA ====================
                 // Generate random values inline (alternative to using a custom feeder)
 
-                ScenarioBuilder randomFeederScenario = scenario("Dynamic Payment Generation")
+                ScenarioBuilder randomFeederScenario = scenario("Dynamic Transaction Generation")
                                 .exec(session -> {
                                         // Generate random values and store in session
                                         return session
@@ -123,8 +124,8 @@ public class KafkaFeederSimulation extends Simulation {
                                 })
                                 .exec(
                                                 KafkaDsl.kafkaRequestReply(
-                                                                "payment-requests",
-                                                                "payment-responses",
+                                                                "transaction-requests",
+                                                                "transaction-responses",
                                                                 session -> session.getString("randomAccountId"),
                                                                 session -> String.format(
                                                                                 "{\"accountId\":\"%s\",\"amount\":%s,\"timestamp\":%s}",
@@ -132,7 +133,7 @@ public class KafkaFeederSimulation extends Simulation {
                                                                                 session.getString("randomAmount"),
                                                                                 session.getString("timestamp")),
                                                                 SerializationType.STRING,
-                                                                paymentChecks,
+                                                                transactionChecks,
                                                                 10, TimeUnit.SECONDS));
 
                 // ==================== LOAD PROFILE ====================

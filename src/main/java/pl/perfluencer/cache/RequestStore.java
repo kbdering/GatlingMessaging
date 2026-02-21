@@ -2,7 +2,7 @@ package pl.perfluencer.cache;
 
 import java.util.List;
 import java.util.Map;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 
 /**
  * Persistence layer for tracking in-flight request-reply transactions in Kafka
@@ -70,135 +70,161 @@ import pl.perfluencer.kafka.util.SerializationType;
  * @see TimeoutHandler
  */
 public interface RequestStore extends AutoCloseable {
-    /** Map key for the message key. */
-    String KEY = "key";
-    /** Map key for the serialized value bytes. */
-    String VALUE_BYTES = "valueBytes";
-    /** Map key for the serialization type. */
-    String SERIALIZATION_TYPE = "serializationType";
-    /** Map key for the transaction name. */
-    String TRANSACTION_NAME = "transactionName";
-    /** Map key for the scenario name. */
-    String SCENARIO_NAME = "scenarioName";
-    /** Map key for the start time (timestamp in milliseconds). */
-    String START_TIME = "startTime";
+        /** Map key for the message key. */
+        String KEY = "key";
+        /** Map key for the serialized value bytes. */
+        String VALUE_BYTES = "valueBytes";
+        /** Map key for the serialization type. */
+        String SERIALIZATION_TYPE = "serializationType";
+        /** Map key for the transaction name. */
+        String TRANSACTION_NAME = "transactionName";
+        /** Map key for the scenario name. */
+        String SCENARIO_NAME = "scenarioName";
+        /** Map key for the start time (timestamp in milliseconds). */
+        String START_TIME = "startTime";
+        /** Map key for serialized session variables (JSON-encoded Map). */
+        String SESSION_VARIABLES = "sessionVariables";
 
-    /**
-     * Stores a request for later correlation with its response.
-     * 
-     * <p>
-     * This method is called immediately after sending a message to Kafka and before
-     * waiting for the response. The stored data allows the framework to match the
-     * response
-     * when it arrives and calculate the true end-to-end latency.
-     * 
-     * @param correlationId     unique identifier for matching this request with its
-     *                          response
-     * @param key               the Kafka message key
-     * @param value             the message payload (will be serialized to byte[])
-     * @param serializationType how the value should be serialized/deserialized
-     * @param transactionName   the Gatling transaction name for reporting
-     * @param scenarioName      the Gatling scenario name for reporting
-     * @param startTime         timestamp when the request was sent (milliseconds
-     *                          since epoch)
-     * @param timeoutMillis     how long to wait before considering this request
-     *                          timed out
-     */
-    void storeRequest(String correlationId, String key, Object value, SerializationType serializationType,
-            String transactionName, String scenarioName, long startTime, long timeoutMillis);
+        /**
+         * Stores a request for later correlation with its response.
+         * 
+         * <p>
+         * This method is called immediately after sending a message to Kafka and before
+         * waiting for the response. The stored data allows the framework to match the
+         * response
+         * when it arrives and calculate the true end-to-end latency.
+         * 
+         * @param correlationId     unique identifier for matching this request with its
+         *                          response
+         * @param key               the Kafka message key
+         * @param value             the message payload (will be serialized to byte[])
+         * @param serializationType how the value should be serialized/deserialized
+         * @param transactionName   the Gatling transaction name for reporting
+         * @param scenarioName      the Gatling scenario name for reporting
+         * @param startTime         timestamp when the request was sent (milliseconds
+         *                          since epoch)
+         * @param timeoutMillis     how long to wait before considering this request
+         *                          timed out
+         */
 
-    /**
-     * Retrieves a single stored request by its correlation ID.
-     * 
-     * <p>
-     * This method is called when a response is received from Kafka to look up the
-     * original request data for validation and latency calculation.
-     * 
-     * @param correlationId the unique identifier of the request
-     * @return a map containing the request data (see class-level constants for
-     *         keys),
-     *         or {@code null} if no request exists with this correlation ID
-     */
-    Map<String, Object> getRequest(String correlationId); // Value will be byte[], type will be SerializationType
+        /**
+         * Stores a request using a RequestData POJO.
+         * 
+         * @param requestData the request data to store
+         */
+        void storeRequest(RequestData requestData);
 
-    /**
-     * Retrieves multiple stored requests in a single operation (batch retrieval).
-     * 
-     * <p>
-     * This method is an optimization for scenarios where multiple responses arrive
-     * simultaneously and need to be matched with their requests efficiently.
-     * 
-     * @param correlationIds list of correlation IDs to retrieve
-     * @return a map where keys are correlation IDs and values are request data maps
-     */
-    Map<String, Map<String, Object>> getRequests(List<String> correlationIds);
+        /**
+         * Stores multiple requests in a single batch operation.
+         * <p>
+         * This method allows optimizing throughput by reducing network round-trips to
+         * the store.
+         * The map for each request should contain keys defined in {@link RequestStore}
+         * constants,
+         * plus "correlationId" and "timeoutMillis".
+         *
+         * @param requests list of request data maps to store
+         */
+        /**
+         * Stores multiple requests efficiently.
+         * 
+         * @param requests list of RequestData objects
+         */
+        void storeRequestBatch(java.util.List<RequestData> requests);
 
-    /**
-     * Processes batched consumer records efficiently using a callback function.
-     * 
-     * <p>
-     * This method allows implementations to optimize batch processing, for example
-     * by retrieving all required requests in a single database query and then
-     * invoking
-     * the processor for each matched pair.
-     * 
-     * @param records map of correlation IDs to consumer record objects
-     * @param process callback function to invoke for each matched request-response
-     *                pair
-     */
-    void processBatchedRecords(Map<String, Object> records, BatchProcessor process);
+        /**
+         * Retrieves a single stored request by its correlation ID.
+         * 
+         * <p>
+         * This method is called when a response is received from Kafka to look up the
+         * original request data for validation and latency calculation.
+         * 
+         * @param correlationId the unique identifier of the request
+         * @return a map containing the request data (see class-level constants for
+         *         keys),
+         *         or {@code null} if no request exists with this correlation ID
+         */
+        RequestData getRequest(String correlationId);
 
-    /**
-     * Deletes a request from the store after it has been successfully processed.
-     * 
-     * <p>
-     * This method should be called after the response has been validated and the
-     * transaction has been completed to prevent memory leaks.
-     * 
-     * @param correlationId the correlation ID of the request to delete
-     */
-    void deleteRequest(String correlationId);
+        /**
+         * Retrieves multiple stored requests in a single operation (batch retrieval).
+         * 
+         * <p>
+         * This method is an optimization for scenarios where multiple responses arrive
+         * simultaneously and need to be matched with their requests efficiently.
+         * 
+         * @param correlationIds list of correlation IDs to retrieve
+         * @return a map where keys are correlation IDs and values are request data
+         *         objects
+         */
+        Map<String, RequestData> getRequests(List<String> correlationIds);
 
-    /**
-     * Starts automatic timeout monitoring for stored requests.
-     * 
-     * <p>
-     * The provided handler will be periodically invoked with any requests that have
-     * exceeded their timeout duration. This prevents memory leaks from requests
-     * that
-     * never receive responses (e.g., due to application crashes or network issues).
-     * 
-     * @param timeoutHandler callback to invoke when requests time out
-     */
-    void startTimeoutMonitoring(TimeoutHandler timeoutHandler);
+        /**
+         * Processes batched consumer records efficiently using a callback function.
+         * 
+         * <p>
+         * This method allows implementations to optimize batch processing, for example
+         * by retrieving all required requests in a single database query and then
+         * invoking
+         * the processor for each matched pair.
+         * 
+         * @param records map of correlation IDs to consumer record objects
+         * @param process callback function to invoke for each matched request-response
+         *                pair
+         */
+        void processBatchedRecords(Map<String, Object> records, BatchProcessor process);
 
-    /**
-     * Stops the automatic timeout monitoring.
-     * 
-     * <p>
-     * Should be called during shutdown to clean up background threads/tasks.
-     */
-    void stopTimeoutMonitoring();
+        /**
+         * Deletes a request from the store after it has been successfully processed.
+         * 
+         * <p>
+         * This method should be called after the response has been validated and the
+         * transaction has been completed to prevent memory leaks.
+         * 
+         * @param correlationId the correlation ID of the request to delete
+         */
+        void deleteRequest(String correlationId);
 
-    /**
-     * Manually triggers timeout processing (for implementations that don't use
-     * automatic monitoring).
-     * 
-     * <p>
-     * This method can be called explicitly to check for and process any timed-out
-     * requests.
-     */
-    void processTimeouts(); // For manual timeout processing
+        /**
+         * Starts automatic timeout monitoring for stored requests.
+         * 
+         * <p>
+         * The provided handler will be periodically invoked with any requests that have
+         * exceeded their timeout duration. This prevents memory leaks from requests
+         * that
+         * never receive responses (e.g., due to application crashes or network issues).
+         * 
+         * @param timeoutHandler callback to invoke when requests time out
+         */
+        void startTimeoutMonitoring(TimeoutHandler timeoutHandler);
 
-    /**
-     * Closes the request store and releases any resources (connections, threads,
-     * etc.).
-     * 
-     * <p>
-     * Implementations should ensure graceful shutdown, flushing any pending data
-     * and closing database connections or Redis clients.
-     * 
-     * @throws Exception if an error occurs during shutdown
-     */
-    void close() throws Exception;
+        /**
+         * Stops the automatic timeout monitoring.
+         * 
+         * <p>
+         * Should be called during shutdown to clean up background threads/tasks.
+         */
+        void stopTimeoutMonitoring();
+
+        /**
+         * Manually triggers timeout processing (for implementations that don't use
+         * automatic monitoring).
+         * 
+         * <p>
+         * This method can be called explicitly to check for and process any timed-out
+         * requests.
+         */
+        void processTimeouts(); // For manual timeout processing
+
+        /**
+         * Closes the request store and releases any resources (connections, threads,
+         * etc.).
+         * 
+         * <p>
+         * Implementations should ensure graceful shutdown, flushing any pending data
+         * and closing database connections or Redis clients.
+         * 
+         * @throws Exception if an error occurs during shutdown
+         */
+        void close() throws Exception;
 }

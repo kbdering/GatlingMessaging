@@ -3,7 +3,6 @@ package pl.perfluencer.kafka.actors;
 import org.apache.pekko.actor.AbstractActor;
 import org.apache.pekko.actor.ActorRef;
 import org.apache.pekko.actor.Props;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
@@ -12,10 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import io.gatling.core.CoreComponents;
@@ -91,16 +88,14 @@ public class KafkaConsumerActor extends AbstractActor {
         try {
             ConsumerRecords<String, Object> records = consumer.poll(pollDuration);
             if (!records.isEmpty()) {
-                List<ConsumerRecord<String, Object>> recordList = new ArrayList<>();
-                for (ConsumerRecord<String, Object> record : records) {
-                    recordList.add(record);
-                }
-                this.messageProcessorRouter.tell(recordList, self());
-                try {
-                    consumer.commitSync();
-                } catch (Exception e) {
-                    logger.error("Error committing offsets", e);
-                }
+                // Pass ConsumerRecords directly - avoids ArrayList allocation per poll
+                this.messageProcessorRouter.tell(records, self());
+                // Non-blocking commit - preserves at-most-once semantics without blocking actor
+                consumer.commitAsync((offsets, exception) -> {
+                    if (exception != null) {
+                        logger.error("Error committing offsets asynchronously", exception);
+                    }
+                });
             }
             self().tell(POLL, self());
         } catch (WakeupException e) {

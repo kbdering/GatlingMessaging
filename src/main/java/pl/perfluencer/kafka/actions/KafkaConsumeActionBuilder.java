@@ -3,34 +3,105 @@ package pl.perfluencer.kafka.actions;
 import io.gatling.core.action.Action;
 import io.gatling.javaapi.core.ActionBuilder;
 import io.gatling.core.structure.ScenarioContext;
+import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
-import io.gatling.core.protocol.Protocol;
-import org.apache.pekko.actor.ActorRef;
+import pl.perfluencer.common.util.SerializationType;
 
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
-public class KafkaConsumeActionBuilder implements ActionBuilder {
+/**
+ * Action builder for consume-only mode.
+ *
+ * <p>
+ * Sets up {@code KafkaConsumerThread} instances in consume-only mode,
+ * where records are processed without request correlation and response-only
+ * checks are applied to every consumed record.
+ * </p>
+ *
+ * <p>
+ * This builder does NOT create a sending action. The Gatling action itself
+ * is a no-op pass-through; the actual work is done by the consumer threads
+ * running in the background.
+ * </p>
+ * 
+ * @param <T> The expected class type of the consumed messages
+ */
+public class KafkaConsumeActionBuilder<T> implements ActionBuilder {
+
+    private static final scala.collection.immutable.List<String> CONSUME_ONLY_GROUP = scala.collection.immutable.List$.MODULE$
+            .from(
+                    scala.jdk.javaapi.CollectionConverters
+                            .asScala(java.util.Collections.singletonList("Consume Only Group")));
 
     private final String requestName;
     private final String topic;
-    private final long timeout;
-    private final TimeUnit timeUnit;
+    private final List<MessageCheck<?, ?>> checks;
+    private final Class<T> expectedClass;
+    private final SerializationType expectedSerde;
 
-    private String saveAsKey;
-
+    @SuppressWarnings("unchecked")
     public KafkaConsumeActionBuilder(String requestName, String topic) {
-        this(requestName, topic, 30, TimeUnit.SECONDS);
+        this(requestName, topic, new ArrayList<>(), (Class<T>) byte[].class, SerializationType.BYTE_ARRAY);
     }
 
-    public KafkaConsumeActionBuilder(String requestName, String topic, long timeout, TimeUnit timeUnit) {
+    private KafkaConsumeActionBuilder(String requestName, String topic, List<MessageCheck<?, ?>> checks,
+            Class<T> expectedClass, SerializationType expectedSerde) {
         this.requestName = requestName;
         this.topic = topic;
-        this.timeout = timeout;
-        this.timeUnit = timeUnit;
+        this.checks = new ArrayList<>(checks);
+        this.expectedClass = expectedClass;
+        this.expectedSerde = expectedSerde;
     }
 
-    public KafkaConsumeActionBuilder saveAs(String key) {
-        this.saveAsKey = key;
+    // ==================== SERIALIZATION HINTS ====================
+
+    public <U> KafkaConsumeActionBuilder<U> asAvro(Class<U> clazz) {
+        return new KafkaConsumeActionBuilder<>(requestName, topic, checks, clazz, SerializationType.AVRO);
+    }
+
+    public <U> KafkaConsumeActionBuilder<U> asProtobuf(Class<U> clazz) {
+        return new KafkaConsumeActionBuilder<>(requestName, topic, checks, clazz, SerializationType.PROTOBUF);
+    }
+
+    public KafkaConsumeActionBuilder<String> asString() {
+        return new KafkaConsumeActionBuilder<>(requestName, topic, checks, String.class, SerializationType.STRING);
+    }
+
+    public KafkaConsumeActionBuilder<byte[]> asBytes() {
+        return new KafkaConsumeActionBuilder<>(requestName, topic, checks, byte[].class, SerializationType.BYTE_ARRAY);
+    }
+
+    // ==================== CHECKS ====================
+
+    /**
+     * Registers a simplified check that only validates the consumed message.
+     * The type is inferred from previous serialization hint methods (e.g.
+     * asAvro(MyClass.class)).
+     */
+    public KafkaConsumeActionBuilder<T> check(String checkName, Function<T, Optional<String>> checkLogic) {
+        MessageCheck<Object, T> check = new MessageCheck<>(
+                checkName,
+                Object.class, SerializationType.STRING, // Ignored in consume-only
+                expectedClass, expectedSerde,
+                (req, res) -> checkLogic.apply(res));
+        this.checks.add(check);
+        return this;
+    }
+
+    public KafkaConsumeActionBuilder<T> check(MessageCheck<?, ?> check) {
+        this.checks.add(check);
+        return this;
+    }
+
+    @SuppressWarnings("unchecked")
+    public KafkaConsumeActionBuilder<T> check(
+            pl.perfluencer.common.checks.MessageCheckBuilder.MessageCheckResult<?, T> check) {
+        this.checks.add(MessageCheck.from(
+                (pl.perfluencer.common.checks.MessageCheckBuilder.MessageCheckResult<Object, T>) check,
+                SerializationType.STRING, this.expectedSerde));
         return this;
     }
 
@@ -39,21 +110,59 @@ public class KafkaConsumeActionBuilder implements ActionBuilder {
         return new io.gatling.core.action.builder.ActionBuilder() {
             @Override
             public Action build(ScenarioContext ctx, Action next) {
-                Protocol protocol = ctx.protocolComponentsRegistry()
-                        .components(KafkaProtocolBuilder.KafkaProtocolComponents.protocolKey).protocol();
-                // We need to get the consumer actor for this topic.
-                // The protocol should probably manage these actors.
-                // Or we create one if not exists?
-                // For now, let's assume the protocol has a way to get/create a raw consumer
-                // actor.
+                KafkaProtocolBuilder.KafkaProtocolComponents components = ctx.protocolComponentsRegistry()
+                        .components(KafkaProtocolBuilder.KafkaProtocolComponents.protocolKey);
+                KafkaProtocolBuilder.KafkaProtocol concreteProtocol = (KafkaProtocolBuilder.KafkaProtocol) components
+                        .protocol();
 
-                // Since we haven't updated KafkaProtocol to support raw consumers yet, we need
-                // to do that.
-                // Let's assume we can get it from the protocol.
-                ActorRef consumerActor = ((KafkaProtocolBuilder.KafkaProtocol) protocol).getRawConsumerActor(topic);
+                // Register checks for this request name
+                if (!checks.isEmpty()) {
+                    concreteProtocol.registerChecks(requestName, checks);
+                }
 
-                return new KafkaConsumeAction(requestName, consumerActor, ctx.coreComponents(), next, timeout,
-                        timeUnit, saveAsKey);
+                // Only create consumer threads once per topic
+                if (concreteProtocol.getConsumerAndProcessor(topic) == null) {
+                    // Create MessageProcessor (shared across all consumer threads)
+                    pl.perfluencer.kafka.MessageProcessor messageProcessor = new pl.perfluencer.kafka.MessageProcessor(
+                            concreteProtocol.getRequestStore(),
+                            ctx.coreComponents().statsEngine(),
+                            ctx.coreComponents().clock(),
+                            null, // No actor controller needed
+                            concreteProtocol.getCheckRegistry(),
+                            concreteProtocol.getGlobalChecks(),
+                            null, // Session-aware checks not used
+                            concreteProtocol.getCorrelationExtractor(),
+                            concreteProtocol.isUseTimestampHeader(),
+                            concreteProtocol.getRetryBackoff(),
+                            concreteProtocol.getMaxRetries(),
+                            concreteProtocol.getParserRegistry(),
+                            CONSUME_ONLY_GROUP);
+
+                    // Create consumer threads in consume-only mode
+                    java.util.List<pl.perfluencer.kafka.consumers.KafkaConsumerThread> consumerThreads = new java.util.ArrayList<>();
+                    String scenarioName = "ConsumeOnly-" + requestName;
+                    for (int i = 0; i < concreteProtocol.getNumConsumers(); i++) {
+                        pl.perfluencer.kafka.consumers.KafkaConsumerThread thread = new pl.perfluencer.kafka.consumers.KafkaConsumerThread(
+                                concreteProtocol.getConsumerProperties(),
+                                topic,
+                                messageProcessor,
+                                ctx.coreComponents().statsEngine(),
+                                concreteProtocol.getPollTimeout(),
+                                concreteProtocol.isSyncCommit(),
+                                i,
+                                requestName, // consume-only request name
+                                scenarioName, // consume-only scenario name
+                                CONSUME_ONLY_GROUP);
+                        thread.start();
+                        consumerThreads.add(thread);
+                    }
+
+                    concreteProtocol.putConsumerAndProcessor(topic,
+                            new KafkaProtocolBuilder.ConsumerAndProcessor(consumerThreads, messageProcessor));
+                }
+
+                // The action itself is a pass-through — consumers do the work in background
+                return new KafkaConsumeAction(requestName, ctx.coreComponents(), next);
             }
         };
     }

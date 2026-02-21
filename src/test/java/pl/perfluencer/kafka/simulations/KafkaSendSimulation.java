@@ -24,17 +24,22 @@ public class KafkaSendSimulation extends Simulation {
 
                 ScenarioBuilder scn = scenario("Kafka Send Simulation")
                                 .exec(
-                                                KafkaDsl.kafka("Req-Wait", "request_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> "TestValue-Wait-"
-                                                                                + UUID.randomUUID().toString(),
-                                                                true, 30, java.util.concurrent.TimeUnit.SECONDS))
+                                                KafkaDsl.kafka("Req-Wait")
+                                                                .send()
+                                                                .topic("request_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> "TestValue-Wait-"
+                                                                                + UUID.randomUUID().toString())
+                                                                .waitForAck()
+                                                                .timeout(30, java.util.concurrent.TimeUnit.SECONDS))
                                 .exec(
-                                                KafkaDsl.kafka("Req-Forget", "request_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> "TestValue-Forget-"
-                                                                                + UUID.randomUUID().toString(),
-                                                                false, 30, java.util.concurrent.TimeUnit.SECONDS));
+                                                KafkaDsl.kafka("Req-Forget")
+                                                                .send()
+                                                                .topic("request_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> "TestValue-Forget-"
+                                                                                + UUID.randomUUID().toString())
+                                                                .timeout(30, java.util.concurrent.TimeUnit.SECONDS));
 
                 setUp(
                                 scn.injectOpen(

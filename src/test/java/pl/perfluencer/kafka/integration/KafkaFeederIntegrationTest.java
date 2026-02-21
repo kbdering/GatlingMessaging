@@ -1,9 +1,17 @@
 package pl.perfluencer.kafka.integration;
 
-import pl.perfluencer.kafka.actors.KafkaProducerActor;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.apache.pekko.actor.ActorRef;
+import org.apache.pekko.actor.ActorSystem;
+import org.apache.pekko.testkit.javadsl.TestKit;
 import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.cache.RequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.cache.RequestData;
+import pl.perfluencer.common.util.SerializationType;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -11,17 +19,13 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pekko.actor.ActorRef;
-import org.apache.pekko.actor.ActorSystem;
-import org.apache.pekko.testkit.javadsl.TestKit;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import pl.perfluencer.cache.InMemoryRequestStore;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -53,8 +57,8 @@ public class KafkaFeederIntegrationTest {
         kafka = new KafkaContainer(KAFKA_IMAGE);
         kafka.start();
 
-        createTopic("payment-requests");
-        createTopic("payment-responses");
+        createTopic("transaction-requests");
+        createTopic("transaction-responses");
 
         system = ActorSystem.create("KafkaFeederTestSystem");
     }
@@ -81,10 +85,10 @@ public class KafkaFeederIntegrationTest {
      */
     @Test
     public void testCsvFeederDataLoading() throws IOException {
-        List<Map<String, String>> feederData = loadCsvFeeder("payment_data.csv");
+        List<Map<String, String>> feederData = loadCsvFeeder("transaction_data.csv");
 
         assertFalse("Feeder data should not be empty", feederData.isEmpty());
-        assertEquals("Should have 10 payment records", 10, feederData.size());
+        assertEquals("Should have 10 transaction records", 10, feederData.size());
 
         // Verify first record structure
         Map<String, String> firstRecord = feederData.get(0);
@@ -105,7 +109,7 @@ public class KafkaFeederIntegrationTest {
         TestKit probe = new TestKit(system);
 
         // Load CSV feeder data
-        List<Map<String, String>> feederData = loadCsvFeeder("payment_data.csv");
+        List<Map<String, String>> feederData = loadCsvFeeder("transaction_data.csv");
 
         // Setup Producer Actor
         Map<String, Object> producerProps = new HashMap<>();
@@ -114,86 +118,85 @@ public class KafkaFeederIntegrationTest {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.ACKS_CONFIG, "all");
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps, null, null));
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps)) {
+            // Send messages using feeder data
+            int messageCount = 0;
+            for (Map<String, String> record : feederData) {
+                String accountId = record.get("accountId");
+                String payload = String.format(
+                        "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\",\"txnId\":\"%s\"}",
+                        accountId,
+                        record.get("amount"),
+                        record.get("currency"),
+                        UUID.randomUUID().toString());
 
-        // Send messages using feeder data
-        int messageCount = 0;
-        for (Map<String, String> record : feederData) {
-            String accountId = record.get("accountId");
-            String payload = String.format(
-                    "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\",\"txnId\":\"%s\"}",
-                    accountId,
-                    record.get("amount"),
-                    record.get("currency"),
-                    UUID.randomUUID().toString());
+                String correlationId = UUID.randomUUID().toString();
 
-            String correlationId = UUID.randomUUID().toString();
-            KafkaProducerActor.ProduceMessage msg = new KafkaProducerActor.ProduceMessage(
-                    "payment-requests",
-                    accountId, // Key from feeder
-                    payload,
-                    correlationId,
-                    true, // waitForAck
-                    null,
-                    null,
-                    scala.collection.immutable.List$.MODULE$.empty());
+                producer.send(new ProducerRecord<>("transaction-requests", accountId, payload),
+                        (metadata, exception) -> {
+                            if (exception == null) {
+                                probe.getRef().tell("ACK", ActorRef.noSender());
+                            } else {
+                                probe.getRef().tell("FAIL", ActorRef.noSender());
+                            }
+                        });
+                messageCount++;
+            }
 
-            producerActor.tell(msg, probe.getRef());
-            messageCount++;
+            // Verify all messages were acknowledged
+            for (int i = 0; i < messageCount; i++) {
+                Object ack = probe.receiveOne(Duration.ofSeconds(10));
+                assertEquals("Should receive acknowledgement for message " + i, "ACK", ack);
+            }
+
+            assertEquals("All feeder records should be sent", feederData.size(), messageCount);
         }
-
-        // Verify all messages were acknowledged
-        for (int i = 0; i < messageCount; i++) {
-            Object ack = probe.receiveOne(Duration.ofSeconds(10));
-            assertNotNull("Should receive acknowledgement for message " + i, ack);
-        }
-
-        assertEquals("All feeder records should be sent", feederData.size(), messageCount);
     }
 
     /**
      * Test request store integration with feeder data.
      */
     @Test
-    public void testFeederWithRequestStore() throws IOException {
-        RequestStore requestStore = new InMemoryRequestStore();
-        List<Map<String, String>> feederData = loadCsvFeeder("payment_data.csv");
+    public void testFeederWithRequestStore() throws Exception {
+        try (RequestStore requestStore = new InMemoryRequestStore()) {
+            List<Map<String, String>> feederData = loadCsvFeeder("transaction_data.csv");
 
-        // Store requests using feeder data (simulating what the simulation does)
-        List<String> correlationIds = new ArrayList<>();
-        for (Map<String, String> record : feederData) {
-            String correlationId = UUID.randomUUID().toString();
-            String payload = String.format(
-                    "{\"accountId\":\"%s\",\"amount\":%s}",
-                    record.get("accountId"),
-                    record.get("amount"));
+            // Store requests using feeder data (simulating what the simulation does)
+            List<String> correlationIds = new ArrayList<>();
+            for (Map<String, String> record : feederData) {
+                String correlationId = UUID.randomUUID().toString();
+                String payload = String.format(
+                        "{\"accountId\":\"%s\",\"amount\":%s}",
+                        record.get("accountId"),
+                        record.get("amount"));
 
-            requestStore.storeRequest(
-                    correlationId,
-                    record.get("accountId"), // Key from feeder
-                    payload.getBytes(StandardCharsets.UTF_8),
-                    SerializationType.STRING,
-                    "PaymentTransaction",
-                    "FeederTestScenario",
-                    System.currentTimeMillis(),
-                    30000 // 30s timeout
-            );
+                requestStore.storeRequest(new RequestData(
+                        correlationId,
+                        record.get("accountId"), // Key from feeder
+                        payload.getBytes(StandardCharsets.UTF_8),
+                        SerializationType.STRING,
+                        "FinancialTransaction",
+                        "FeederTestScenario",
+                        System.currentTimeMillis(),
+                        30000, // 30s timeout
+                        null));
 
-            correlationIds.add(correlationId);
-        }
+                correlationIds.add(correlationId);
+            }
 
-        // Verify all requests are stored
-        for (String correlationId : correlationIds) {
-            Map<String, Object> storedRequest = requestStore.getRequest(correlationId);
-            assertNotNull("Request should be found: " + correlationId, storedRequest);
-            assertNotNull("Request should have key", storedRequest.get(RequestStore.KEY));
-        }
+            // Verify all requests are stored
+            for (String correlationId : correlationIds) {
+                pl.perfluencer.cache.RequestData storedRequest = requestStore.getRequest(correlationId);
+                assertNotNull("Request should be found: " + correlationId, storedRequest);
+                assertNotNull("Request should have key", storedRequest.key);
+            }
 
-        // Simulate response matching (delete request simulating successful response)
-        for (String correlationId : correlationIds) {
-            requestStore.deleteRequest(correlationId);
-            Map<String, Object> deleted = requestStore.getRequest(correlationId);
-            assertNull("Request should be deleted after matching", deleted);
+            // Simulate response matching (delete request simulating successful response)
+            for (String correlationId : correlationIds) {
+                requestStore.deleteRequest(correlationId);
+                pl.perfluencer.cache.RequestData deleted = requestStore.getRequest(correlationId);
+                assertNull("Request should be deleted after matching", deleted);
+            }
         }
     }
 
@@ -203,7 +206,7 @@ public class KafkaFeederIntegrationTest {
     @Test
     public void testEndToEndFeederFlow() throws IOException {
         TestKit probe = new TestKit(system);
-        List<Map<String, String>> feederData = loadCsvFeeder("payment_data.csv");
+        List<Map<String, String>> feederData = loadCsvFeeder("transaction_data.csv");
 
         // Take first 3 records for quick test
         List<Map<String, String>> testRecords = feederData.subList(0, 3);
@@ -215,32 +218,28 @@ public class KafkaFeederIntegrationTest {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(producerProps, null, null));
+        try (KafkaProducer<String, String> producer = new KafkaProducer<>(producerProps)) {
+            // Send messages
+            for (Map<String, String> record : testRecords) {
+                String payload = String.format(
+                        "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\"}",
+                        record.get("accountId"),
+                        record.get("amount"),
+                        record.get("currency"));
+                sentPayloads.add(payload);
 
-        // Send messages
-        for (Map<String, String> record : testRecords) {
-            String payload = String.format(
-                    "{\"accountId\":\"%s\",\"amount\":%s,\"currency\":\"%s\"}",
-                    record.get("accountId"),
-                    record.get("amount"),
-                    record.get("currency"));
-            sentPayloads.add(payload);
+                producer.send(new ProducerRecord<>("transaction-requests", record.get("accountId"), payload),
+                        (metadata, exception) -> {
+                            if (exception == null) {
+                                probe.getRef().tell("ACK", ActorRef.noSender());
+                            }
+                        });
+            }
 
-            KafkaProducerActor.ProduceMessage msg = new KafkaProducerActor.ProduceMessage(
-                    "payment-requests",
-                    record.get("accountId"),
-                    payload,
-                    UUID.randomUUID().toString(),
-                    true,
-                    null,
-                    null,
-                    scala.collection.immutable.List$.MODULE$.empty());
-            producerActor.tell(msg, probe.getRef());
-        }
-
-        // Wait for acks
-        for (int i = 0; i < testRecords.size(); i++) {
-            probe.receiveOne(Duration.ofSeconds(5));
+            // Wait for acks
+            for (int i = 0; i < testRecords.size(); i++) {
+                probe.receiveOne(Duration.ofSeconds(5));
+            }
         }
 
         // Consume and verify
@@ -252,7 +251,7 @@ public class KafkaFeederIntegrationTest {
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps)) {
-            consumer.subscribe(Collections.singletonList("payment-requests"));
+            consumer.subscribe(Collections.singletonList("transaction-requests"));
 
             Set<String> receivedPayloads = new HashSet<>();
             long timeout = System.currentTimeMillis() + 10000; // 10s timeout

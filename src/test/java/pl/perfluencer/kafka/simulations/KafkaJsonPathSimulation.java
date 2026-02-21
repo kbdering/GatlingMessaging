@@ -5,7 +5,7 @@ import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -30,20 +30,24 @@ public class KafkaJsonPathSimulation extends Simulation {
 
                 ScenarioBuilder scn = scenario("Kafka JSON Path Simulation")
                                 .exec(
-                                                KafkaDsl.kafkaRequestReply("request_topic", "response_topic",
-                                                                session -> UUID.randomUUID().toString(), // Key (ignored
-                                                                                                         // for
-                                                                                                         // correlation)
-                                                                session -> ("{\"correlationId\": \""
+                                                KafkaDsl.kafka("request_topic")
+                                                                .requestReply()
+                                                                .requestTopic("request_topic")
+                                                                .responseTopic("response_topic")
+                                                                .key(session -> UUID.randomUUID().toString()) // Key
+                                                                                                              // (ignored
+                                                                                                              // for
+                                                                                                              // correlation)
+                                                                .value(session -> ("{\"correlationId\": \""
                                                                                 + UUID.randomUUID().toString()
                                                                                 + "\", \"data\": \"test\"}")
-                                                                                .getBytes(StandardCharsets.UTF_8), // JSON
+                                                                                .getBytes(StandardCharsets.UTF_8)) // JSON
                                                                                                                    // Body
                                                                                                                    // as
                                                                                                                    // byte[]
-                                                                SerializationType.STRING,
-                                                                Collections.emptyList(),
-                                                                10, TimeUnit.SECONDS));
+                                                                .serializationType(byte[].class, byte[].class,
+                                                                                SerializationType.STRING)
+                                                                .timeout(10, TimeUnit.SECONDS));
 
                 setUp(
                                 scn.injectOpen(
