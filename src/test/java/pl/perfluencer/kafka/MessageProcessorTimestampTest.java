@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka;
 
 import io.gatling.commons.stats.Status;
@@ -5,7 +21,7 @@ import io.gatling.commons.util.Clock;
 import io.gatling.core.stats.StatsEngine;
 import pl.perfluencer.cache.BatchProcessor;
 import pl.perfluencer.cache.RequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.header.internals.RecordHeaders;
@@ -66,11 +82,16 @@ public class MessageProcessorTimestampTest {
                         BatchProcessor processor = (BatchProcessor) args[1];
 
                         if (correlationIdToValue.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, "1000");
-                            requestData.put(RequestStore.TRANSACTION_NAME, "test-transaction");
-                            requestData.put(RequestStore.SCENARIO_NAME, "test-scenario");
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes(StandardCharsets.UTF_8));
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(StandardCharsets.UTF_8),
+                                    pl.perfluencer.common.util.SerializationType.STRING,
+                                    "test-transaction",
+                                    "test-scenario",
+                                    1000L,
+                                    0,
+                                    new HashMap<>());
 
                             processor.onMatch(correlationId, requestData, correlationIdToValue.get(correlationId));
                         }
@@ -143,11 +164,16 @@ public class MessageProcessorTimestampTest {
                         BatchProcessor processor = (BatchProcessor) args[1];
 
                         if (correlationIdToValue.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, "1000");
-                            requestData.put(RequestStore.TRANSACTION_NAME, "test-transaction");
-                            requestData.put(RequestStore.SCENARIO_NAME, "test-scenario");
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes(StandardCharsets.UTF_8));
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(StandardCharsets.UTF_8),
+                                    pl.perfluencer.common.util.SerializationType.STRING,
+                                    "test-transaction",
+                                    "test-scenario",
+                                    1000L,
+                                    0,
+                                    new HashMap<>());
 
                             processor.onMatch(correlationId, requestData, correlationIdToValue.get(correlationId));
                         }

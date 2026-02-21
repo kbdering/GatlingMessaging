@@ -1,8 +1,28 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka;
 
 import java.util.Optional;
 import java.util.function.BiFunction;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.checks.JsonPathExtractor;
+import pl.perfluencer.common.checks.RegexExtractor;
+import pl.perfluencer.common.checks.SubstringExtractor;
+import pl.perfluencer.common.checks.XPathExtractor;
+import pl.perfluencer.common.util.SerializationType;
 
 /**
  * Defines a validation check for request-reply message patterns in Kafka load
@@ -128,5 +148,122 @@ public class MessageCheck<ReqT, ResT> { // Now generic
      */
     public BiFunction<ReqT, ResT, Optional<String>> getCheckLogic() {
         return checkLogic;
+    }
+
+    // ==================== BUILDER INTEGRATION ====================
+
+    /**
+     * Creates a MessageCheck from a MessageCheckBuilder result.
+     * Uses STRING serialization by default for both request and response.
+     * 
+     * @param result the builder result
+     * @return a new MessageCheck
+     */
+    public static <ReqT, ResT> MessageCheck<ReqT, ResT> from(
+            pl.perfluencer.common.checks.MessageCheckBuilder.MessageCheckResult<ReqT, ResT> result) {
+        return from(result, SerializationType.STRING, SerializationType.STRING);
+    }
+
+    /**
+     * Creates a MessageCheck from a MessageCheckBuilder result with explicit
+     * serialization types.
+     * 
+     * @param result            the builder result
+     * @param requestSerdeType  serialization type for request
+     * @param responseSerdeType serialization type for response
+     * @return a new MessageCheck
+     */
+    public static <ReqT, ResT> MessageCheck<ReqT, ResT> from(
+            pl.perfluencer.common.checks.MessageCheckBuilder.MessageCheckResult<ReqT, ResT> result,
+            SerializationType requestSerdeType,
+            SerializationType responseSerdeType) {
+        return new MessageCheck<>(
+                result.getCheckName(),
+                result.getRequestClass(),
+                requestSerdeType,
+                result.getResponseClass(),
+                responseSerdeType,
+                result.getCheckLogic());
+    }
+
+    /**
+     * Creates a simple string echo check.
+     */
+    public static MessageCheck<String, String> echoCheck() {
+        return from(pl.perfluencer.common.checks.Checks.echoCheck());
+    }
+
+    /**
+     * Creates a check that verifies response contains a substring.
+     */
+    public static MessageCheck<String, String> responseContains(String substring) {
+        return from(pl.perfluencer.common.checks.Checks.responseContains(substring));
+    }
+
+    /**
+     * Creates a check that verifies a JSONPath equals expected value.
+     */
+    public static MessageCheck<String, String> jsonPathEquals(String jsonPath, Object expectedValue) {
+        return from(pl.perfluencer.common.checks.Checks.jsonPathEquals(jsonPath, expectedValue));
+    }
+
+    /**
+     * Creates a check that verifies JSONPath values in request and response match.
+     */
+    public static MessageCheck<String, String> jsonFieldEquals(String requestPath, String responsePath) {
+        return from(pl.perfluencer.common.checks.Checks.jsonFieldEquals(requestPath, responsePath));
+    }
+
+    /**
+     * Creates a check that verifies response is not empty.
+     */
+    public static MessageCheck<String, String> responseNotEmpty() {
+        return from(pl.perfluencer.common.checks.Checks.responseNotEmpty());
+    }
+
+    // ==================== GATLING-STYLE CHECK CHAIN ====================
+
+    /**
+     * Creates a regex extractor for fluent check chaining.
+     *
+     * <pre>{@code
+     * .check(MessageCheck.regex("orderId=(\\w+)").find(1).is("ORD-123"))
+     * }</pre>
+     */
+    public static RegexExtractor regex(String pattern) {
+        return pl.perfluencer.common.checks.MessageCheckBuilder.regex(pattern);
+    }
+
+    /**
+     * Creates an XPath extractor for fluent check chaining.
+     *
+     * <pre>{@code
+     * .check(MessageCheck.xpath("/response/status").find().is("OK"))
+     * }</pre>
+     */
+    public static XPathExtractor xpath(String expression) {
+        return pl.perfluencer.common.checks.MessageCheckBuilder.xpath(expression);
+    }
+
+    /**
+     * Creates a substring extractor for fluent check chaining.
+     *
+     * <pre>{@code
+     * .check(MessageCheck.substring("SUCCESS").find().exists())
+     * }</pre>
+     */
+    public static SubstringExtractor substring(String text) {
+        return pl.perfluencer.common.checks.MessageCheckBuilder.substring(text);
+    }
+
+    /**
+     * Creates a JSONPath extractor for fluent check chaining.
+     *
+     * <pre>{@code
+     * .check(MessageCheck.jsonPath("$.status").find().is("OK"))
+     * }</pre>
+     */
+    public static JsonPathExtractor jsonPath(String expression) {
+        return pl.perfluencer.common.checks.MessageCheckBuilder.jsonPath(expression);
     }
 }

@@ -1,13 +1,30 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.integration;
 
 import io.gatling.commons.stats.Status;
 import io.gatling.commons.util.Clock;
 import io.gatling.core.stats.StatsEngine;
+import pl.perfluencer.cache.RequestData;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import pl.perfluencer.kafka.extractors.JsonPathExtractor;
 import pl.perfluencer.kafka.extractors.KeyExtractor;
 import pl.perfluencer.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.MessageProcessor;
 import pl.perfluencer.cache.RequestStore;
@@ -71,8 +88,9 @@ public class CorrelationStrategyTest {
 
         String correlationId = "corr-header-1";
         // Store request
-        requestStore.storeRequest(correlationId, "key", "val", SerializationType.STRING, "HeaderTx", "Scn",
-                System.currentTimeMillis(), 10000);
+        requestStore
+                .storeRequest(new RequestData(correlationId, "key", "val", SerializationType.STRING, "HeaderTx", "Scn",
+                        System.currentTimeMillis(), 10000, null));
 
         // Create response with header
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "key", "val");
@@ -94,8 +112,8 @@ public class CorrelationStrategyTest {
 
         String correlationId = "corr-key-1";
         // Store request
-        requestStore.storeRequest(correlationId, "key", "val", SerializationType.STRING, "KeyTx", "Scn",
-                System.currentTimeMillis(), 10000);
+        requestStore.storeRequest(new RequestData(correlationId, "key", "val", SerializationType.STRING, "KeyTx", "Scn",
+                System.currentTimeMillis(), 10000, null));
 
         // Create response with matching KEY
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, correlationId, "val");
@@ -116,8 +134,9 @@ public class CorrelationStrategyTest {
 
         String correlationId = "corr-key-mismatch";
         // Store request
-        requestStore.storeRequest(correlationId, "key", "val", SerializationType.STRING, "KeyTxMismatch", "Scn",
-                System.currentTimeMillis(), 10000);
+        requestStore.storeRequest(
+                new RequestData(correlationId, "key", "val", SerializationType.STRING, "KeyTxMismatch", "Scn",
+                        System.currentTimeMillis(), 10000, null));
 
         // Create response with DIFFERENT key
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, "wrong-key", "val");
@@ -138,8 +157,9 @@ public class CorrelationStrategyTest {
 
         String correlationId = "corr-key-null";
         // Store request
-        requestStore.storeRequest(correlationId, "key", "val", SerializationType.STRING, "KeyTxNull", "Scn",
-                System.currentTimeMillis(), 10000);
+        requestStore
+                .storeRequest(new RequestData(correlationId, "key", "val", SerializationType.STRING, "KeyTxNull", "Scn",
+                        System.currentTimeMillis(), 10000, null));
 
         // Create response with NULL key
         ConsumerRecord<String, Object> record = new ConsumerRecord<>("topic", 0, 0, null, "val");
@@ -161,8 +181,9 @@ public class CorrelationStrategyTest {
 
         String correlationId = "corr-json-1";
         // Store request
-        requestStore.storeRequest(correlationId, "key", "val", SerializationType.STRING, "JsonTx", "Scn",
-                System.currentTimeMillis(), 10000);
+        requestStore
+                .storeRequest(new RequestData(correlationId, "key", "val", SerializationType.STRING, "JsonTx", "Scn",
+                        System.currentTimeMillis(), 10000, null));
 
         // Create response with matching JSON body
         String jsonValue = "{\"requestId\": \"" + correlationId + "\", \"data\": \"foo\"}";
@@ -187,8 +208,11 @@ public class CorrelationStrategyTest {
                 clock,
                 ActorRef.noSender(),
                 Collections.emptyList(),
+                null, // No session aware checks
                 extractor,
-                false);
+                false,
+                java.time.Duration.ofMillis(50),
+                0); // Max retries 0 for immediate validaton
     }
 
     // --- Helpers ---

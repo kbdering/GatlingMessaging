@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.simulations;
 
 import io.gatling.javaapi.core.ScenarioBuilder;
@@ -7,7 +23,7 @@ import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 
 // Import your dummy proto classes
@@ -71,29 +87,35 @@ public class KafkaRequestReplyInMemoryDoubleFireSimulation extends Simulation {
                                                 session -> session.set("myValueToSend",
                                                                 "TestValue-" + UUID.randomUUID().toString()))
                                 .exec(
-                                                KafkaDsl.kafkaRequestReply("request_topic", "request_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> DummyRequest.newBuilder()
+                                                KafkaDsl.kafka("Request-Reply Fire 1")
+                                                                .requestReply()
+                                                                .requestTopic("request_topic")
+                                                                .responseTopic("request_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> DummyRequest.newBuilder()
                                                                                 .setRequestId(UUID.randomUUID()
                                                                                                 .toString())
                                                                                 .setRequestPayload(session.getString(
                                                                                                 "myValueToSend"))
-                                                                                .build().toByteArray(),
-                                                                SerializationType.PROTOBUF,
-                                                                sameRequestChecks,
-                                                                10, TimeUnit.SECONDS))
+                                                                                .build().toByteArray())
+                                                                .asProtobuf(DummyRequest.class, DummyRequest.class)
+                                                                .checks(sameRequestChecks)
+                                                                .timeout(10, TimeUnit.SECONDS))
                                 .exec(
-                                                KafkaDsl.kafkaRequestReply("request_topic", "request_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> DummyRequest.newBuilder()
+                                                KafkaDsl.kafka("Request-Reply Fire 2")
+                                                                .requestReply()
+                                                                .requestTopic("request_topic")
+                                                                .responseTopic("request_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> DummyRequest.newBuilder()
                                                                                 .setRequestId(UUID.randomUUID()
                                                                                                 .toString())
                                                                                 .setRequestPayload(session.getString(
                                                                                                 "myValueToSend"))
-                                                                                .build().toByteArray(),
-                                                                SerializationType.PROTOBUF,
-                                                                sameRequestChecks,
-                                                                10, TimeUnit.SECONDS));
+                                                                                .build().toByteArray())
+                                                                .asProtobuf(DummyRequest.class, DummyRequest.class)
+                                                                .checks(sameRequestChecks)
+                                                                .timeout(10, TimeUnit.SECONDS));
 
                 setUp(
                                 scn.injectOpen(

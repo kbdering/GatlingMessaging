@@ -1,10 +1,26 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.simulations;
 
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import java.time.Duration;
@@ -44,14 +60,17 @@ public class KafkaRequestReplyAckSimulation extends Simulation {
 
                 ScenarioBuilder scn = scenario("Kafka Request-Reply Ack Demo")
                                 .exec(
-                                                KafkaDsl.kafkaRequestReply("request_ack", "request_topic",
-                                                                "response_topic",
-                                                                session -> UUID.randomUUID().toString(),
-                                                                session -> "Hello Kafka " + UUID.randomUUID(),
-                                                                SerializationType.STRING,
-                                                                checks,
-                                                                true, // waitForAck = true
-                                                                10, TimeUnit.SECONDS));
+                                                KafkaDsl.kafka("request_ack")
+                                                                .requestReply()
+                                                                .requestTopic("request_topic")
+                                                                .responseTopic("response_topic")
+                                                                .key(session -> UUID.randomUUID().toString())
+                                                                .value(session -> "Hello Kafka " + UUID.randomUUID())
+                                                                .serializationType(String.class, String.class,
+                                                                                SerializationType.STRING)
+                                                                .checks(checks)
+                                                                .waitForAck(true)
+                                                                .timeout(10, TimeUnit.SECONDS));
 
                 setUp(
                                 scn.injectOpen(constantUsersPerSec(1).during(5))).protocols(kafkaProtocol);

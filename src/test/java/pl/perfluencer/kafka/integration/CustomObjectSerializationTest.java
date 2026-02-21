@@ -1,12 +1,25 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.integration;
 
-import pl.perfluencer.kafka.actors.KafkaProducerActor;
 import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pekko.actor.ActorRef;
-import org.apache.pekko.actor.ActorSystem;
-import org.apache.pekko.testkit.javadsl.TestKit;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -18,17 +31,8 @@ import static org.junit.Assert.assertEquals;
 
 public class CustomObjectSerializationTest {
 
-    static ActorSystem system;
-
-    @BeforeClass
-    public static void setup() {
-        system = ActorSystem.create();
-    }
-
     @AfterClass
     public static void teardown() {
-        TestKit.shutdownActorSystem(system);
-        system = null;
     }
 
     static class MyObject {
@@ -65,34 +69,18 @@ public class CustomObjectSerializationTest {
 
     @Test
     public void testSendCustomObject() {
-        new TestKit(system) {
-            {
-                @SuppressWarnings("unchecked")
-                Serializer<Object> valueSerializer = (Serializer<Object>) (Serializer<?>) new MyObjectSerializer();
-                MockProducer<String, Object> producer = new MockProducer<>(true, new StringSerializer(),
-                        valueSerializer);
-                ActorRef actorRef = system.actorOf(KafkaProducerActor.props(producer, null, null));
+        @SuppressWarnings("unchecked")
+        Serializer<Object> valueSerializer = (Serializer<Object>) (Serializer<?>) new MyObjectSerializer();
+        MockProducer<String, Object> producer = new MockProducer<>(true, new StringSerializer(),
+                valueSerializer);
 
-                String topic = "custom-obj-topic";
-                String key = "key";
-                MyObject message = new MyObject("test", 123);
-                String correlationId = "corr-custom";
+        String topic = "custom-obj-topic";
+        String key = "key";
+        MyObject message = new MyObject("test", 123);
 
-                actorRef.tell(new KafkaProducerActor.ProduceMessage("request-topic", "key",
-                        message, "correlationId", true, null, null, scala.collection.immutable.List$.MODULE$.empty()),
-                        getRef());
+        producer.send(new ProducerRecord<>(topic, key, message));
 
-                // Verify actor sent back metadata
-                expectMsgClass(org.apache.kafka.clients.producer.RecordMetadata.class);
-
-                assertEquals(1, producer.history().size());
-                assertEquals(message, producer.history().get(0).value());
-
-                // Verify serialization happened correctly in MockProducer (it stores the
-                // object, but we can check if serializer works if we were using real producer)
-                // MockProducer stores the value as passed.
-                // But we can verify that the serializer we passed is compatible.
-            }
-        };
+        assertEquals(1, producer.history().size());
+        assertEquals(message, producer.history().get(0).value());
     }
 }

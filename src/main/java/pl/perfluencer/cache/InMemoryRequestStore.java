@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.cache;
 
 import java.util.Collections;
@@ -12,8 +28,10 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
+import pl.perfluencer.cache.config.CoreStoreConfig;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +39,8 @@ import org.slf4j.LoggerFactory;
 public class InMemoryRequestStore implements RequestStore {
 
     private static final Logger logger = LoggerFactory.getLogger(InMemoryRequestStore.class);
-    private final ConcurrentHashMap<String, Map<String, Object>> cache = new ConcurrentHashMap<>();
+    // Changed to store RequestData directly
+    private final ConcurrentHashMap<String, RequestData> cache = new ConcurrentHashMap<>();
 
     // Map of Timeout Duration -> Queue of Timeout Entries
     private final ConcurrentSkipListMap<Long, ConcurrentLinkedDeque<TimeoutEntry>> timeoutBuckets;
@@ -41,74 +60,72 @@ public class InMemoryRequestStore implements RequestStore {
     private TimeoutHandler timeoutHandler;
     private final long timeoutCheckIntervalMillis;
 
+    private final CoreStoreConfig config;
+
     public InMemoryRequestStore() {
-        this(5000);
+        this(new CoreStoreConfig());
     }
 
     public InMemoryRequestStore(long timeoutCheckIntervalMillis) {
-        this.timeoutCheckIntervalMillis = timeoutCheckIntervalMillis;
+        this(new CoreStoreConfig().timeoutCheckInterval(Duration.ofMillis(timeoutCheckIntervalMillis)));
+    }
+
+    public InMemoryRequestStore(CoreStoreConfig config) {
+        this.config = config != null ? config : new CoreStoreConfig();
+        this.timeoutCheckIntervalMillis = this.config.getTimeoutCheckInterval().toMillis();
         this.timeoutBuckets = new ConcurrentSkipListMap<>();
     }
 
     @Override
-    public void storeRequest(String correlationId, String key, Object value, SerializationType serializationType,
-            String transactionName, String scenarioName, long startTime, long timeoutMillis) {
-        Map<String, Object> requestData = new ConcurrentHashMap<>();
-        if (key != null) {
-            requestData.put(RequestStore.KEY, key);
-        }
-        if (value != null) {
-            requestData.put(RequestStore.VALUE_BYTES, value);
-        }
-        if (serializationType != null) {
-            requestData.put(RequestStore.SERIALIZATION_TYPE, serializationType);
-        }
-        requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-        requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-        requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-        cache.put(correlationId, requestData);
+    public void storeRequest(RequestData requestData) {
+        cache.put(requestData.correlationId, requestData);
 
         // Store timeout information if timeout is specified
-        if (timeoutMillis > 0) {
-            long expirationTime = startTime + timeoutMillis;
+        if (requestData.timeoutMillis > 0) {
+            long expirationTime = requestData.startTime + requestData.timeoutMillis;
 
             // Add to the bucket for this specific timeout duration
-            timeoutBuckets.computeIfAbsent(timeoutMillis, k -> new ConcurrentLinkedDeque<>())
-                    .add(new TimeoutEntry(correlationId, expirationTime));
+            timeoutBuckets.computeIfAbsent(requestData.timeoutMillis, k -> new ConcurrentLinkedDeque<>())
+                    .add(new TimeoutEntry(requestData.correlationId, expirationTime));
         }
     }
 
     @Override
-    public Map<String, Object> getRequest(String correlationId) {
+    public void storeRequestBatch(List<RequestData> requests) {
+        for (RequestData request : requests) {
+            storeRequest(request);
+        }
+    }
+
+    @Override
+    public RequestData getRequest(String correlationId) {
         return cache.get(correlationId);
     }
 
     @Override
-    public Map<String, Map<String, Object>> getRequests(List<String> correlationIds) {
+    public Map<String, RequestData> getRequests(List<String> correlationIds) {
         if (correlationIds == null || correlationIds.isEmpty()) {
             return Collections.emptyMap();
         }
 
-        Map<String, Map<String, Object>> foundRequests = new HashMap<>();
+        Map<String, RequestData> foundRequests = new HashMap<>();
         for (String correlationId : correlationIds) {
-            Map<String, Object> requestData = cache.get(correlationId);
-            if (requestData != null) {
-                foundRequests.put(correlationId, requestData);
+            RequestData data = cache.get(correlationId);
+            if (data != null) {
+                foundRequests.put(correlationId, data);
             }
         }
         return foundRequests;
     }
 
     // Not an override from RequestStore, but used internally and by tests
-    public Map<String, Object> remove(String correlationId) {
-        // Lazy removal: we only remove from cache.
-        // The timeout entry will be cleaned up when it expires and we check the cache.
+    public RequestData remove(String correlationId) {
         return cache.remove(correlationId);
     }
 
     @Override
     public void deleteRequest(String correlationId) {
-        remove(correlationId);
+        cache.remove(correlationId);
     }
 
     @Override
@@ -165,7 +182,7 @@ public class InMemoryRequestStore implements RequestStore {
                     queue.poll();
 
                     // Check if the request is still active (lazy removal check)
-                    Map<String, Object> requestData = cache.remove(head.correlationId);
+                    RequestData requestData = cache.remove(head.correlationId);
 
                     if (requestData != null) {
                         // Request was still in cache, so it's a real timeout
@@ -200,9 +217,10 @@ public class InMemoryRequestStore implements RequestStore {
         // unmatched
         for (Map.Entry<String, Object> recordEntry : records.entrySet()) {
             String correlationId = recordEntry.getKey();
-            Map<String, Object> requestData = cache.remove(correlationId); // Get and remove atomically
+            RequestData requestData = cache.remove(correlationId); // Get and remove atomically
 
             if (requestData != null) {
+                // Use optimized callback with RequestData POJO
                 process.onMatch(correlationId, requestData, recordEntry.getValue());
             } else {
                 process.onUnmatched(correlationId, recordEntry.getValue());

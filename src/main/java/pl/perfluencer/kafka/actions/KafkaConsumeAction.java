@@ -1,92 +1,55 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.actions;
 
-import io.gatling.commons.stats.Status;
 import io.gatling.core.action.Action;
-import io.gatling.core.stats.StatsEngine;
-import io.gatling.core.session.Session;
 import io.gatling.core.CoreComponents;
-import pl.perfluencer.kafka.actors.KafkaRawConsumerActor;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.pekko.actor.ActorRef;
-import org.apache.pekko.pattern.Patterns;
-import org.apache.pekko.util.Timeout;
-import scala.concurrent.Future;
-import scala.collection.immutable.List$;
+import io.gatling.core.session.Session;
 
-import java.util.concurrent.TimeUnit;
-
+/**
+ * A pass-through Gatling action for consume-only mode.
+ *
+ * <p>
+ * The actual consumption and check validation happens in the background
+ * via {@code KafkaConsumerThread} in consume-only mode. This action simply
+ * advances the Gatling scenario to the next step.
+ * </p>
+ */
 public class KafkaConsumeAction implements Action {
 
     private final String requestName;
-    private final ActorRef consumerActor;
     private final CoreComponents coreComponents;
     private final Action next;
-    private final long timeout;
-    private final TimeUnit timeUnit;
 
-    private final String saveAsKey;
-
-    public KafkaConsumeAction(String requestName, ActorRef consumerActor, CoreComponents coreComponents, Action next,
-            long timeout, TimeUnit timeUnit, String saveAsKey) {
+    public KafkaConsumeAction(String requestName, CoreComponents coreComponents, Action next) {
         this.requestName = requestName;
-        this.consumerActor = consumerActor;
         this.coreComponents = coreComponents;
         this.next = next;
-        this.timeout = timeout;
-        this.timeUnit = timeUnit;
-        this.saveAsKey = saveAsKey;
     }
 
     @Override
     public String name() {
-        return "kafka-consume-action";
+        return "kafka-consume-" + requestName;
     }
 
     @Override
     public void execute(Session session) {
-        StatsEngine statsEngine = coreComponents.statsEngine();
-        long startTime = coreComponents.clock().nowMillis();
-
-        Timeout askTimeout = new Timeout(timeout, timeUnit);
-        Future<Object> future = Patterns.ask(consumerActor, new KafkaRawConsumerActor.GetMessage(), askTimeout);
-
-        java.util.concurrent.CompletionStage<Object> javaFuture = scala.jdk.javaapi.FutureConverters.asJava(future);
-
-        javaFuture.whenComplete((response, exception) -> {
-            long endTime = coreComponents.clock().nowMillis();
-            if (exception != null) {
-                handleFailure(session, statsEngine, startTime, endTime, exception);
-            } else {
-                if (response instanceof ConsumerRecord) {
-                    ConsumerRecord<?, ?> record = (ConsumerRecord<?, ?>) response;
-
-                    Session newSession = session;
-                    if (saveAsKey != null) {
-                        // Save the record value (or the whole record?)
-                        // Let's save the value for simplicity, or maybe the whole record object?
-                        // Saving the value is most common.
-                        // If the user wants key/headers, maybe we need more specific saveAs?
-                        // For now, let's save the VALUE.
-                        newSession = session.set(saveAsKey, record.value());
-                    }
-
-                    statsEngine.logResponse(newSession.scenario(), List$.MODULE$.empty(), requestName, startTime,
-                            endTime, Status.apply("OK"),
-                            scala.Some.apply("200"), scala.Some.apply(""));
-                    next.execute(newSession);
-                } else {
-                    handleFailure(session, statsEngine, startTime, endTime,
-                            new RuntimeException("Unknown response: " + response));
-                }
-            }
-        });
-    }
-
-    private void handleFailure(Session session, StatsEngine statsEngine, long startTime, long endTime, Throwable e) {
-        session.markAsFailed();
-        statsEngine.logResponse(session.scenario(), List$.MODULE$.empty(), name(), startTime, endTime,
-                Status.apply("KO"),
-                scala.Some.apply("500"), scala.Some.apply("ERROR: " + e.getMessage()));
+        // Consumer threads handle consumption in the background.
+        // This action just advances the scenario.
         next.execute(session);
     }
 

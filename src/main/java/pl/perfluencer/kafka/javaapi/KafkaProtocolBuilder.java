@@ -1,22 +1,41 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package pl.perfluencer.kafka.javaapi;
 
+import org.slf4j.LoggerFactory;
+
+import org.apache.kafka.clients.producer.KafkaProducer;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.pekko.actor.ActorRef;
 import org.apache.pekko.actor.ActorSystem;
-import org.apache.pekko.routing.RoundRobinPool;
+
 import io.gatling.core.CoreComponents;
 import io.gatling.core.config.GatlingConfiguration;
 import io.gatling.core.protocol.Protocol;
 import io.gatling.core.session.Session;
 import io.gatling.javaapi.core.ProtocolBuilder;
-import pl.perfluencer.kafka.actors.KafkaConsumerActor;
-import pl.perfluencer.kafka.actors.KafkaMessages;
-import pl.perfluencer.kafka.actors.KafkaProducerActor;
-import pl.perfluencer.kafka.MessageCheck;
-import pl.perfluencer.kafka.actors.MessageProcessorActor;
+
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.cache.RequestStore;
+import pl.perfluencer.common.util.ParserRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -26,9 +45,9 @@ import org.apache.kafka.common.serialization.StringSerializer;
 
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.List;
+
 import java.util.Map;
-import java.util.Objects;
+
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.gatling.core.protocol.ProtocolKey;
@@ -49,9 +68,108 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     private CorrelationExtractor correlationExtractor = new pl.perfluencer.kafka.extractors.KeyExtractor();
 
     private Duration pollTimeout = Duration.ofMillis(100);
+    private pl.perfluencer.cache.config.CoreStoreConfig storeConfig = new pl.perfluencer.cache.config.CoreStoreConfig();
+    private boolean syncCommit = false;
+
+    private final java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks = new java.util.ArrayList<>();
+    private final ParserRegistry parserRegistry = new ParserRegistry();
+
+    public KafkaProtocolBuilder check(pl.perfluencer.kafka.MessageCheck<?, ?> check) {
+        this.globalChecks.add(check);
+        return this;
+    }
+
+    public KafkaProtocolBuilder checks(pl.perfluencer.kafka.MessageCheck<?, ?>... checks) {
+        if (checks != null) {
+            java.util.Collections.addAll(this.globalChecks, checks);
+        }
+        return this;
+    }
+
+    /**
+     * Convenience method to add a check directly from a builder result (e.g.
+     * jsonPathEquals).
+     * Automatically wraps it in MessageCheck.from().
+     */
+    public KafkaProtocolBuilder check(
+            pl.perfluencer.common.checks.MessageCheckBuilder.MessageCheckResult<?, ?> result) {
+        // Default to STRING serialization for global checks usually involving text
+        // (JSON/XML)
+        // If specific types are needed, user should use the manual MessageCheck.from()
+        this.globalChecks.add(pl.perfluencer.kafka.MessageCheck.from(result));
+        return this;
+    }
+
+    public KafkaProtocolBuilder storeConfig(
+            java.util.function.Consumer<pl.perfluencer.cache.config.CoreStoreConfig> configurer) {
+        configurer.accept(this.storeConfig);
+        return this;
+    }
+
+    /**
+     * Registers a parser for a Protobuf or Avro class to avoid reflection overhead.
+     * 
+     * <p>
+     * Example:
+     * 
+     * <pre>{@code
+     * protocol.registerParser(OrderRequest.class, OrderRequest::parseFrom);
+     * }</pre>
+     * 
+     * @param clazz  the class type to register
+     * @param parser function that converts byte[] to the target type
+     * @param <T>    the target type
+     * @return this builder for chaining
+     */
+    public <T> KafkaProtocolBuilder registerParser(Class<T> clazz, java.util.function.Function<byte[], T> parser) {
+        parserRegistry.register(clazz, parser);
+        return this;
+    }
+
+    /**
+     * Returns the parser registry for passing to MessageProcessor.
+     */
+    public ParserRegistry getParserRegistry() {
+        return parserRegistry;
+    }
 
     public KafkaProtocolBuilder pollTimeout(Duration timeout) {
         this.pollTimeout = timeout;
+        return this;
+    }
+
+    /**
+     * Enables synchronous offset commit mode. When true, offsets are committed
+     * synchronously after each batch, providing stronger delivery guarantees.
+     * When false (default), offsets are committed asynchronously for better
+     * performance.
+     */
+    public KafkaProtocolBuilder syncCommit(boolean syncCommit) {
+        this.syncCommit = syncCommit;
+        return this;
+    }
+
+    private Duration retryBackoff = Duration.ofMillis(50);
+    private int maxRetries = 3;
+
+    /**
+     * Delay between retry attempts when a matching request is not found in the
+     * store.
+     * Useful for eventual consistency when using request stores.
+     * Default: 50ms.
+     */
+    public KafkaProtocolBuilder retryBackoff(Duration retryBackoff) {
+        this.retryBackoff = retryBackoff;
+        return this;
+    }
+
+    /**
+     * Maximum number of times to retry looking up a request in the store before
+     * marking it as failed.
+     * Default: 3.
+     */
+    public KafkaProtocolBuilder maxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
         return this;
     }
 
@@ -59,6 +177,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
     public KafkaProtocolBuilder timeoutCheckInterval(Duration interval) {
         this.timeoutCheckInterval = interval;
+        this.storeConfig.timeoutCheckInterval(interval);
         return this;
     }
 
@@ -157,12 +276,19 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     }
 
     public static class ConsumerAndProcessor {
-        public final ActorRef consumerRouter;
-        public final ActorRef messageProcessorRouter;
+        public final java.util.List<pl.perfluencer.kafka.consumers.KafkaConsumerThread> consumerThreads;
+        public final pl.perfluencer.kafka.MessageProcessor messageProcessor;
 
-        public ConsumerAndProcessor(ActorRef consumerRouter, ActorRef messageProcessorRouter) {
-            this.consumerRouter = consumerRouter;
-            this.messageProcessorRouter = messageProcessorRouter;
+        public ConsumerAndProcessor(java.util.List<pl.perfluencer.kafka.consumers.KafkaConsumerThread> consumerThreads,
+                pl.perfluencer.kafka.MessageProcessor messageProcessor) {
+            this.consumerThreads = consumerThreads;
+            this.messageProcessor = messageProcessor;
+        }
+
+        public void shutdown() {
+            for (pl.perfluencer.kafka.consumers.KafkaConsumerThread thread : consumerThreads) {
+                thread.shutdown();
+            }
         }
     }
 
@@ -180,14 +306,25 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final boolean useTimestampHeader;
         private final String transactionalId;
         private final boolean measureStoreLatency;
-        private ActorRef producerRouter;
+        private final Duration retryBackoff;
+        private final int maxRetries;
+        private final boolean syncCommit;
+
+        private final List<KafkaProducer<String, Object>> producers = new ArrayList<>();
+        private final AtomicInteger producerIndex = new AtomicInteger(0);
         private final Map<String, ConsumerAndProcessor> consumerAndProcessorsByTopic = new ConcurrentHashMap<>();
+        private final java.util.concurrent.ConcurrentMap<String, java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>>> checkRegistry = new ConcurrentHashMap<>();
+        private final java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks;
+        private final ParserRegistry parserRegistry;
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
                 CorrelationExtractor correlationExtractor, Duration pollTimeout, Duration metricInjectionInterval,
                 String correlationHeaderName, boolean useTimestampHeader, String transactionalId,
-                boolean measureStoreLatency) {
+                boolean measureStoreLatency,
+                Duration retryBackoff, int maxRetries, boolean syncCommit,
+                java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks,
+                ParserRegistry parserRegistry) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -201,6 +338,16 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.useTimestampHeader = useTimestampHeader;
             this.transactionalId = transactionalId;
             this.measureStoreLatency = measureStoreLatency;
+            this.retryBackoff = retryBackoff;
+            this.maxRetries = maxRetries;
+            this.syncCommit = syncCommit;
+            this.globalChecks = globalChecks != null ? new java.util.ArrayList<>(globalChecks)
+                    : java.util.Collections.emptyList();
+            this.parserRegistry = parserRegistry;
+        }
+
+        public java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> getGlobalChecks() {
+            return globalChecks;
         }
 
         public boolean isMeasureStoreLatency() {
@@ -251,16 +398,37 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             return useTimestampHeader;
         }
 
+        public Duration getRetryBackoff() {
+            return retryBackoff;
+        }
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public boolean isSyncCommit() {
+            return syncCommit;
+        }
+
         public String getTransactionalId() {
             return transactionalId;
         }
 
-        public ActorRef getProducerRouter() {
-            return producerRouter;
+        public KafkaProducer<String, Object> getProducer() {
+            if (producers.isEmpty()) {
+                return null;
+            }
+            int index = producerIndex.getAndIncrement() % producers.size();
+            return producers.get(Math.abs(index));
         }
 
-        public void setProducerRouter(ActorRef producerRouter) {
-            this.producerRouter = producerRouter;
+        public List<KafkaProducer<String, Object>> getProducers() {
+            return producers;
+        }
+
+        public void setProducers(List<KafkaProducer<String, Object>> producers) {
+            this.producers.clear();
+            this.producers.addAll(producers);
         }
 
         public ConsumerAndProcessor getConsumerAndProcessor(String topic) {
@@ -279,6 +447,24 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                         .props(consumerProperties, t, pollTimeout));
             });
         }
+
+        public java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> getChecks(String requestName) {
+            return checkRegistry.getOrDefault(requestName, java.util.Collections.emptyList());
+        }
+
+        public void registerChecks(String requestName, java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> checks) {
+            if (checks != null && !checks.isEmpty()) {
+                checkRegistry.put(requestName, checks);
+            }
+        }
+
+        public java.util.concurrent.ConcurrentMap<String, java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>>> getCheckRegistry() {
+            return checkRegistry;
+        }
+
+        public ParserRegistry getParserRegistry() {
+            return parserRegistry;
+        }
     }
 
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
@@ -289,47 +475,33 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public KafkaProtocolComponents(KafkaProtocol kafkaProtocol, CoreComponents coreComponents) {
             this.kafkaProtocol = kafkaProtocol;
             this.coreComponents = coreComponents;
-            String componentId = coreComponents != null ? coreComponents.toString() : "test";
-            if (kafkaProtocol.getProducerRouter() == null) {
-                if (kafkaProtocol.getTransactionalId() != null) {
-                    // Transactional producers must have unique IDs
-                    java.util.List<String> routeePaths = new java.util.ArrayList<>();
-                    for (int i = 0; i < kafkaProtocol.getNumProducers(); i++) {
-                        Map<String, Object> props = new HashMap<>(kafkaProtocol.getProducerProperties());
-                        props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, kafkaProtocol.getTransactionalId() + "-" + i);
-                        ActorRef producer = kafkaProtocol.getActorSystem().actorOf(
-                                KafkaProducerActor.props(props, coreComponents.statsEngine(), coreComponents.clock()),
-                                "kafkaProducer-" + componentId + "-" + i);
-                        routeePaths.add(producer.path().toStringWithoutAddress());
-                    }
-                    ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
-                            new org.apache.pekko.routing.RoundRobinGroup(routeePaths).props(),
-                            "kafkaProducerRouter-" + componentId);
-                    kafkaProtocol.setProducerRouter(producerRouter);
-                } else {
-                    ActorRef producerRouter = kafkaProtocol.getActorSystem().actorOf(
-                            new RoundRobinPool(kafkaProtocol.getNumProducers())
-                                    .props(KafkaProducerActor.props(kafkaProtocol.getProducerProperties(),
-                                            coreComponents.statsEngine(), coreComponents.clock())),
-                            "kafkaProducerRouter-" + componentId);
-                    kafkaProtocol.setProducerRouter(producerRouter);
+
+            if (kafkaProtocol.getProducers().isEmpty()) {
+                // Initialize KafkaProducer pool
+                List<KafkaProducer<String, Object>> producers = new ArrayList<>();
+                int numProducers = kafkaProtocol.getNumProducers();
+                for (int i = 0; i < numProducers; i++) {
+                    producers.add(new KafkaProducer<>(kafkaProtocol.getProducerProperties()));
                 }
+                kafkaProtocol.setProducers(producers);
+                System.out.println("DEBUG: KafkaProtocolComponents instantiated - Created pool of " + numProducers
+                        + " KafkaProducers");
             }
-            System.out.println("DEBUG: KafkaProtocolComponents instantiated");
         }
 
         public Function1<Session, Session> onStart() {
             kafkaProtocol.getRequestStore().startTimeoutMonitoring(new pl.perfluencer.cache.TimeoutHandler() {
                 @Override
-                public void onTimeout(String correlationId, Map<String, Object> requestData) {
-                    long startTime = Long.parseLong((String) requestData.get(RequestStore.START_TIME));
+                public void onTimeout(String correlationId, pl.perfluencer.cache.RequestData requestData) {
+                    long startTime = requestData.startTime;
                     long endTime = System.currentTimeMillis();
-                    String transactionName = (String) requestData.get(RequestStore.TRANSACTION_NAME);
-                    String scenarioName = (String) requestData.get(RequestStore.SCENARIO_NAME);
+                    String transactionName = requestData.transactionName;
+                    String scenarioName = requestData.scenarioName;
 
                     coreComponents.statsEngine().logResponse(
                             scenarioName,
-                            scala.collection.immutable.List$.MODULE$.empty(),
+                            scala.collection.immutable.List$.MODULE$.from(scala.jdk.javaapi.CollectionConverters
+                                    .asScala(java.util.Collections.singletonList("End-to-End Group"))),
                             transactionName,
                             startTime,
                             endTime,
@@ -347,6 +519,9 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         }
 
         private void startMetricInjection() {
+            LoggerFactory.getLogger(KafkaProtocolBuilder.class).info(
+                    "Starting Kafka Metric Injection scheduler with interval: {}",
+                    kafkaProtocol.getMetricInjectionInterval());
             metricScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "KafkaMetricInjector");
                 t.setDaemon(true);
@@ -376,20 +551,26 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
 
                     // Log Lag as a "Response Time" (so we can assert on max value)
                     // We log it as OK request
+                    long duration = (long) maxLag;
+                    if (duration <= 0)
+                        duration = 1; // ensure positive duration for Gatling StatsEngine
+
+                    LoggerFactory.getLogger(KafkaProtocolBuilder.class)
+                            .debug("Injecting Kafka Metric kafka-consumer-lag-max: {}", maxLag);
                     coreComponents.statsEngine().logResponse(
                             "Kafka Metrics",
                             scala.collection.immutable.List$.MODULE$.empty(),
                             "kafka-consumer-lag-max",
-                            now - (long) maxLag, // Start time = now - lag, so Duration = lag
+                            now - duration, // Start time = now - duration, so Gatling logs duration
                             now,
                             io.gatling.commons.stats.Status.apply("OK"),
                             scala.Option.empty(),
                             scala.Option.empty());
 
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    LoggerFactory.getLogger(KafkaProtocolBuilder.class).error("Error in Kafka Metric Injector", e);
                 }
-            }, 0, kafkaProtocol.getMetricInjectionInterval().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            }, 2000, kafkaProtocol.getMetricInjectionInterval().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
         }
 
         public Function1<Session, BoxedUnit> onExit() {
@@ -398,6 +579,12 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 if (metricScheduler != null) {
                     metricScheduler.shutdownNow();
                 }
+                // Do NOT close producers here. onExit is called for each user session
+                // termination.
+                // Closing shared producers here would break the simulation for other running
+                // users.
+                // Producers will be closed when the JVM terminates or we can implement a proper
+                // shutdown hook if needed.
                 return BoxedUnit.UNIT;
             };
         }
@@ -453,7 +640,7 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         }
 
         if (requestStore == null) {
-            requestStore = new InMemoryRequestStore(timeoutCheckInterval.toMillis());
+            requestStore = new InMemoryRequestStore(storeConfig);
         }
 
         producerProperties.putIfAbsent(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -489,6 +676,11 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 correlationHeaderName,
                 useTimestampHeader,
                 transactionalId,
-                measureStoreLatency);
+                measureStoreLatency,
+                retryBackoff,
+                maxRetries,
+                syncCommit,
+                globalChecks,
+                parserRegistry);
     }
 }

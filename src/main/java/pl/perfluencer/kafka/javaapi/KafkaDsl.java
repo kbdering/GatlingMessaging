@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.javaapi;
 
 import io.gatling.core.protocol.Protocol;
@@ -5,11 +21,12 @@ import io.gatling.javaapi.core.Session;
 import io.gatling.javaapi.core.internal.Expressions;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.actions.KafkaActionBuilder;
+import pl.perfluencer.kafka.actions.KafkaConsumeActionBuilder;
 import pl.perfluencer.kafka.actions.KafkaRequestReplyActionBuilder;
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 
 import pl.perfluencer.kafka.extractors.JsonPathExtractor;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -51,6 +68,54 @@ import java.util.function.Function;
  * @see KafkaRequestReplyActionBuilder
  */
 public class KafkaDsl {
+
+        private final String requestName;
+
+        public KafkaDsl(String requestName) {
+                this.requestName = requestName;
+        }
+
+        // ==================== FLUENT API ENTRY POINTS ====================
+
+        /**
+         * Entry point for the fluent Kafka DSL.
+         * 
+         * <pre>{@code
+         * kafka("Order Request")
+         *                 .requestReply()
+         *                 .requestTopic("req")
+         *                 .responseTopic("res")
+         *                 .send("payload")
+         * }</pre>
+         */
+        public static KafkaDsl kafka(String requestName) {
+                return new KafkaDsl(requestName);
+        }
+
+        /**
+         * Start a Request-Reply definition.
+         */
+        public KafkaRequestReply<byte[], byte[]> requestReply() {
+                return new KafkaRequestReply<>(requestName);
+        }
+
+        /**
+         * Start a Fire-and-Forget send definition.
+         *
+         * <pre>{@code
+         * kafka("Send Avro")
+         *                 .send()
+         *                 .topic("users")
+         *                 .key(session -> UUID.randomUUID().toString())
+         *                 .value(session -> createGenericRecord())
+         *                 .asAvro()
+         * }</pre>
+         */
+        public KafkaFireAndForget send() {
+                return new KafkaFireAndForget(requestName);
+        }
+
+        // ==================== LEGACY / STATIC API ====================
 
         /**
          * Creates a new Kafka protocol builder.
@@ -204,6 +269,81 @@ public class KafkaDsl {
                 return new KafkaActionBuilder(requestName, topic, keyFunction, valueFunction, null, null);
         }
 
+        // ====================================================================
+        // Fire-and-forget DSL with Object value (byte[], Avro, Protobuf, etc.)
+        // ====================================================================
+
+        /**
+         * Creates a KafkaActionBuilder for sending messages with an Object value.
+         * <p>
+         * Use this for non-String payloads such as byte[], Avro GenericRecord,
+         * or Protobuf Message. The Kafka producer serializer configured in
+         * the protocol handles the actual serialization.
+         * </p>
+         *
+         * @param topic         The target Kafka topic.
+         * @param keyFunction   A function that takes a Gatling Session and returns the
+         *                      message key (String).
+         * @param valueFunction A function that takes a Gatling Session and returns the
+         *                      message value (any Object).
+         * @return A KafkaActionBuilder.
+         */
+        public static KafkaActionBuilder kafkaObject(String topic,
+                        java.util.function.Function<Session, String> keyFunction,
+                        java.util.function.Function<Session, Object> valueFunction) {
+                return KafkaActionBuilder.withObjectValue(null, topic, keyFunction, valueFunction);
+        }
+
+        /**
+         * Creates a KafkaActionBuilder for sending messages with an Object value
+         * and a custom request name.
+         *
+         * @param requestName   The name of the request.
+         * @param topic         The target Kafka topic.
+         * @param keyFunction   A function that takes a Gatling Session and returns the
+         *                      message key (String).
+         * @param valueFunction A function that takes a Gatling Session and returns the
+         *                      message value (any Object).
+         * @return A KafkaActionBuilder.
+         */
+        public static KafkaActionBuilder kafkaObject(String requestName, String topic,
+                        java.util.function.Function<Session, String> keyFunction,
+                        java.util.function.Function<Session, Object> valueFunction) {
+                return KafkaActionBuilder.withObjectValue(requestName, topic, keyFunction, valueFunction);
+        }
+
+        /**
+         * Creates a KafkaActionBuilder for sending byte[] values.
+         *
+         * @param topic         The target Kafka topic.
+         * @param keyFunction   A function that returns the message key.
+         * @param valueFunction A function that returns the message value as byte[].
+         * @return A KafkaActionBuilder.
+         */
+        public static KafkaActionBuilder kafkaBytes(String topic,
+                        java.util.function.Function<Session, String> keyFunction,
+                        java.util.function.Function<Session, byte[]> valueFunction) {
+                return KafkaActionBuilder.withObjectValue(null, topic, keyFunction,
+                                session -> valueFunction.apply(session));
+        }
+
+        /**
+         * Creates a KafkaActionBuilder for sending byte[] values with a custom
+         * request name.
+         *
+         * @param requestName   The name of the request.
+         * @param topic         The target Kafka topic.
+         * @param keyFunction   A function that returns the message key.
+         * @param valueFunction A function that returns the message value as byte[].
+         * @return A KafkaActionBuilder.
+         */
+        public static KafkaActionBuilder kafkaBytes(String requestName, String topic,
+                        java.util.function.Function<Session, String> keyFunction,
+                        java.util.function.Function<Session, byte[]> valueFunction) {
+                return KafkaActionBuilder.withObjectValue(requestName, topic, keyFunction,
+                                session -> valueFunction.apply(session));
+        }
+
         /**
          * Creates a KafkaActionBuilder for sending messages, using lambdas (Session ->
          * String)
@@ -254,7 +394,8 @@ public class KafkaDsl {
 
         // Existing method, adapted to use byte[] for String value, assuming STRING
         // serialization and no checks by default
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestTopic, String responseTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestTopic,
+                        String responseTopic,
                         Function<Session, String> keyFunction,
                         String valueExpression, // Gatling EL for string value
                         Protocol protocol,
@@ -262,13 +403,15 @@ public class KafkaDsl {
                 Function<Session, String> stringValueFunction = toJavaFunction(valueExpression);
                 Function<Session, Object> byteValueFunction = session -> stringValueFunction.apply(session)
                                 .getBytes(StandardCharsets.UTF_8);
-                return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
-                                responseTopic, keyFunction, byteValueFunction,
-                                SerializationType.STRING, protocol, Collections.emptyList(), true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>("kafka-request-reply-action", requestTopic,
+                                responseTopic, keyFunction, byteValueFunction, null,
+                                byte[].class, SerializationType.STRING, byte[].class, SerializationType.STRING,
+                                protocol, Collections.emptyList(), true, timeout, timeUnit);
         }
 
         // Recommended: Overloaded method without the Protocol parameter
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestTopic, String responseTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestTopic,
+                        String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
                         SerializationType requestSerializationType,
@@ -276,23 +419,26 @@ public class KafkaDsl {
                         long timeout, TimeUnit timeUnit) {
                 // Pass null for the protocol; the ActionBuilder will resolve it from the
                 // context.
-                return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
-                                responseTopic, keyFunction, valueFunction,
-                                requestSerializationType, null, messageChecks, true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>("kafka-request-reply-action", requestTopic,
+                                responseTopic, keyFunction, valueFunction, null,
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                null, messageChecks, true, timeout, timeUnit);
         }
 
         // New comprehensive method for byte[] value, explicit SerializationType, and
         // MessageChecks
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestTopic, String responseTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestTopic,
+                        String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
                         SerializationType requestSerializationType,
                         List<MessageCheck<?, ?>> messageChecks, // Changed to generic wildcard
                         Protocol protocol,
                         long timeout, TimeUnit timeUnit) {
-                return new KafkaRequestReplyActionBuilder("kafka-request-reply-action-akka", requestTopic,
-                                responseTopic, keyFunction, valueFunction,
-                                requestSerializationType, protocol, messageChecks, true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>("kafka-request-reply-action", requestTopic,
+                                responseTopic, keyFunction, valueFunction, null,
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                protocol, messageChecks, true, timeout, timeUnit);
         }
 
         // New methods with requestName support
@@ -317,7 +463,8 @@ public class KafkaDsl {
                 };
         }
 
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestName,
+                        String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         String valueExpression, // Gatling EL for string value
@@ -326,12 +473,14 @@ public class KafkaDsl {
                 Function<Session, String> stringValueFunction = toJavaFunction(valueExpression);
                 Function<Session, Object> byteValueFunction = session -> stringValueFunction.apply(session)
                                 .getBytes(StandardCharsets.UTF_8);
-                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
-                                byteValueFunction,
-                                SerializationType.STRING, protocol, Collections.emptyList(), true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>(requestName, requestTopic, responseTopic, keyFunction,
+                                byteValueFunction, null,
+                                byte[].class, SerializationType.STRING, byte[].class, SerializationType.STRING,
+                                protocol, Collections.emptyList(), true, timeout, timeUnit);
         }
 
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestName,
+                        String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
@@ -340,12 +489,14 @@ public class KafkaDsl {
                         long timeout, TimeUnit timeUnit) {
                 // Pass null for the protocol; the ActionBuilder will resolve it from the
                 // context.
-                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
-                                valueFunction,
-                                requestSerializationType, null, messageChecks, true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>(requestName, requestTopic, responseTopic, keyFunction,
+                                valueFunction, null,
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                null, messageChecks, true, timeout, timeUnit);
         }
 
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestName,
+                        String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
@@ -353,14 +504,16 @@ public class KafkaDsl {
                         List<MessageCheck<?, ?>> messageChecks, // Changed to generic wildcard
                         Protocol protocol,
                         long timeout, TimeUnit timeUnit) {
-                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
-                                valueFunction,
-                                requestSerializationType, protocol, messageChecks, true, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>(requestName, requestTopic, responseTopic, keyFunction,
+                                valueFunction, null,
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                protocol, messageChecks, true, timeout, timeUnit);
         }
 
         // Overloads with waitForAck
 
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestName,
+                        String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
@@ -368,9 +521,10 @@ public class KafkaDsl {
                         List<MessageCheck<?, ?>> messageChecks,
                         boolean waitForAck,
                         long timeout, TimeUnit timeUnit) {
-                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
-                                valueFunction,
-                                requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
+                return new KafkaRequestReplyActionBuilder<>(requestName, requestTopic, responseTopic, keyFunction,
+                                valueFunction, null,
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                null, messageChecks, waitForAck, timeout, timeUnit);
         }
 
         /**
@@ -402,7 +556,8 @@ public class KafkaDsl {
                                 timeUnit);
         }
 
-        public static KafkaRequestReplyActionBuilder kafkaRequestReply(String requestName, String requestTopic,
+        public static KafkaRequestReplyActionBuilder<byte[], byte[]> kafkaRequestReply(String requestName,
+                        String requestTopic,
                         String responseTopic,
                         Function<Session, String> keyFunction,
                         Function<Session, Object> valueFunction,
@@ -411,17 +566,44 @@ public class KafkaDsl {
                         List<MessageCheck<?, ?>> messageChecks,
                         boolean waitForAck,
                         long timeout, TimeUnit timeUnit) {
-                return new KafkaRequestReplyActionBuilder(requestName, requestTopic, responseTopic, keyFunction,
+                return new KafkaRequestReplyActionBuilder<>(requestName, requestTopic, responseTopic, keyFunction,
                                 valueFunction, headers,
-                                requestSerializationType, null, messageChecks, waitForAck, timeout, timeUnit);
+                                byte[].class, requestSerializationType, byte[].class, requestSerializationType,
+                                null, messageChecks, waitForAck, timeout, timeUnit);
         }
 
-        public static pl.perfluencer.kafka.actions.KafkaConsumeActionBuilder consume(String topic) {
-                return new pl.perfluencer.kafka.actions.KafkaConsumeActionBuilder(null, topic);
+        // ==================== CONSUME-ONLY API ====================
+
+        /**
+         * Creates a consume-only action builder.
+         *
+         * <p>
+         * Starts consumer threads in the background that consume from the given topic
+         * and apply registered checks to every record. No messages are sent.
+         * </p>
+         *
+         * <pre>{@code
+         * exec(KafkaDsl.consume("Consume Orders", "orders-topic")
+         *                 .check(MessageCheck.responseNotEmpty())
+         *                 .check(MessageCheck.responseContains("orderId")))
+         * }</pre>
+         *
+         * @param requestName the name for stats reporting and check registry lookup
+         * @param topic       the topic to consume from
+         * @return a {@link KafkaConsumeActionBuilder}
+         */
+        public static KafkaConsumeActionBuilder<byte[]> consume(String requestName, String topic) {
+                return new KafkaConsumeActionBuilder<>(requestName, topic);
         }
 
-        public static pl.perfluencer.kafka.actions.KafkaConsumeActionBuilder consume(String requestName,
-                        String topic) {
-                return new pl.perfluencer.kafka.actions.KafkaConsumeActionBuilder(requestName, topic);
+        /**
+         * Creates a consume-only action builder using the topic as the request name.
+         *
+         * @param topic the topic to consume from (also used as the request name)
+         * @return a {@link KafkaConsumeActionBuilder}
+         */
+        public static KafkaConsumeActionBuilder<byte[]> consume(String topic) {
+                return new KafkaConsumeActionBuilder<>(topic, topic);
         }
+
 }

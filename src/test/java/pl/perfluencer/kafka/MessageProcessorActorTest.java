@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka;
 
 import org.apache.pekko.actor.ActorSystem;
@@ -6,7 +22,7 @@ import io.gatling.core.stats.StatsEngine;
 import io.gatling.commons.util.Clock;
 import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.cache.BatchProcessor;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.junit.After;
@@ -87,13 +103,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes());
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -213,13 +232,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes(StandardCharsets.UTF_8));
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(StandardCharsets.UTF_8),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -287,13 +309,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.BYTE_ARRAY);
-                            requestData.put(RequestStore.VALUE_BYTES, new byte[] { 1, 2, 3 });
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    new byte[] { 1, 2, 3 },
+                                    SerializationType.BYTE_ARRAY,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -365,13 +390,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes(StandardCharsets.UTF_8));
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(StandardCharsets.UTF_8),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -434,13 +462,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, specialString.getBytes(StandardCharsets.UTF_8));
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    specialString.getBytes(StandardCharsets.UTF_8),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -515,13 +546,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, originalString.getBytes(StandardCharsets.UTF_8));
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    originalString.getBytes(StandardCharsets.UTF_8),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;
@@ -594,13 +628,16 @@ public class MessageProcessorActorTest {
                         Map<String, byte[]> records = (Map<String, byte[]>) args[0];
                         BatchProcessor processor = (BatchProcessor) args[1];
                         if (records.containsKey(correlationId)) {
-                            Map<String, Object> requestData = new HashMap<>();
-                            requestData.put(RequestStore.START_TIME, String.valueOf(startTime));
-                            requestData.put(RequestStore.TRANSACTION_NAME, transactionName);
-                            requestData.put(RequestStore.SCENARIO_NAME, scenarioName);
-                            requestData.put(RequestStore.SERIALIZATION_TYPE, SerializationType.STRING);
-                            requestData.put(RequestStore.VALUE_BYTES, "request".getBytes(StandardCharsets.UTF_8));
-
+                            pl.perfluencer.cache.RequestData requestData = new pl.perfluencer.cache.RequestData(
+                                    correlationId,
+                                    "key",
+                                    "request".getBytes(StandardCharsets.UTF_8),
+                                    SerializationType.STRING,
+                                    transactionName,
+                                    scenarioName,
+                                    startTime,
+                                    0,
+                                    new HashMap<>());
                             processor.onMatch(correlationId, requestData, records.get(correlationId));
                         }
                         return null;

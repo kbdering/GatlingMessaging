@@ -1,15 +1,32 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.integration;
 
 import io.gatling.commons.stats.Status;
 import io.gatling.commons.util.Clock;
 import io.gatling.core.stats.StatsEngine;
-import pl.perfluencer.kafka.actors.KafkaProducerActor;
+
 import pl.perfluencer.kafka.extractors.CorrelationExtractor;
 import pl.perfluencer.cache.InMemoryRequestStore;
-import pl.perfluencer.kafka.util.SerializationType;
+import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
 import pl.perfluencer.kafka.MessageProcessor;
 import pl.perfluencer.cache.RequestStore;
+import pl.perfluencer.cache.RequestData;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -63,8 +80,11 @@ public class MockKafkaRequestReplyIntegrationTest {
         CorrelationExtractor correlationExtractor = new pl.perfluencer.kafka.extractors.HeaderExtractor(
                 "correlationId");
         processor = new MessageProcessor(requestStore, stubStatsEngine, clock, ActorRef.noSender(), checks,
+                null,
                 correlationExtractor,
-                false);
+                false,
+                java.time.Duration.ofMillis(50),
+                0);
 
         // Setup mock consumer with topic partition
         TopicPartition partition = new TopicPartition("response-topic", 0);
@@ -92,19 +112,19 @@ public class MockKafkaRequestReplyIntegrationTest {
         String transactionName = "TestRequest";
         String scenarioName = "TestScenario";
 
-        // 1. Create producer actor and send request
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
-        producerActor.tell(
-                new KafkaProducerActor.ProduceMessage("request-topic", requestKey, requestValue, correlationId, true,
-                        null, null, scala.collection.immutable.List$.MODULE$.empty()),
-                probe.getRef());
+        // 1. Send request using producer directly
+        ProducerRecord<String, Object> record = new ProducerRecord<>("request-topic", requestKey, requestValue);
+        // emulate headers that might be added
+        record.headers().add(new RecordHeader("correlationId", correlationId.getBytes(StandardCharsets.UTF_8)));
+
+        mockProducer.send(record);
 
         Thread.sleep(100); // Give actor time to process
 
         // 2. Store request (simulating what KafkaRequestReplyAction does)
         long startTime = System.currentTimeMillis();
-        requestStore.storeRequest(correlationId, requestKey, requestValue, SerializationType.STRING,
-                transactionName, scenarioName, startTime, 30000);
+        requestStore.storeRequest(new RequestData(correlationId, requestKey, requestValue, SerializationType.STRING,
+                transactionName, scenarioName, startTime, 30000, null));
 
         // 3. Verify request was sent to Kafka
         assertEquals(1, mockProducer.history().size());
@@ -136,20 +156,18 @@ public class MockKafkaRequestReplyIntegrationTest {
     @Test
     public void testMultipleRequestsWithDifferentCorrelationIds() throws InterruptedException {
         TestKit probe = new TestKit(system);
-        ActorRef producerActor = system.actorOf(KafkaProducerActor.props(mockProducer, null, null));
-
         // Send multiple requests
         String[] correlationIds = { "corr-1", "corr-2", "corr-3" };
         for (String corrId : correlationIds) {
             String topic = "request-topic";
             String key = "key-" + corrId;
             byte[] value = ("value-" + corrId).getBytes();
-            producerActor.tell(
-                    new KafkaProducerActor.ProduceMessage(topic, key, value, corrId, true, null, null,
-                            scala.collection.immutable.List$.MODULE$.empty()),
-                    probe.getRef());
-            requestStore.storeRequest(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
-                    SerializationType.STRING, "Req-" + corrId, "Scenario", System.currentTimeMillis(), 30000);
+
+            ProducerRecord<String, Object> batchRecord = new ProducerRecord<>(topic, key, value);
+            batchRecord.headers().add(new RecordHeader("correlationId", corrId.getBytes(StandardCharsets.UTF_8)));
+            mockProducer.send(batchRecord);
+            requestStore.storeRequest(new RequestData(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
+                    SerializationType.STRING, "Req-" + corrId, "Scenario", System.currentTimeMillis(), 30000, null));
         }
 
         Thread.sleep(100);
@@ -193,8 +211,8 @@ public class MockKafkaRequestReplyIntegrationTest {
 
         // Test with String serialization
         byte[] stringValue = "test string value".getBytes(StandardCharsets.UTF_8);
-        requestStore.storeRequest(correlationId, key, stringValue, SerializationType.STRING,
-                "StringTest", "TestScenario", System.currentTimeMillis(), 30000);
+        requestStore.storeRequest(new RequestData(correlationId, key, stringValue, SerializationType.STRING,
+                "StringTest", "TestScenario", System.currentTimeMillis(), 30000, null));
 
         ConsumerRecord<String, Object> response = createResponseRecord(correlationId, key, "response string");
         processor.process(Collections.singletonList(response));
@@ -214,8 +232,8 @@ public class MockKafkaRequestReplyIntegrationTest {
         // Store multiple requests
         List<String> correlationIds = Arrays.asList("batch-1", "batch-2", "batch-3");
         for (String corrId : correlationIds) {
-            requestStore.storeRequest(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
-                    SerializationType.STRING, "BatchReq", "BatchScenario", System.currentTimeMillis(), 30000);
+            requestStore.storeRequest(new RequestData(corrId, "key-" + corrId, ("value-" + corrId).getBytes(),
+                    SerializationType.STRING, "BatchReq", "BatchScenario", System.currentTimeMillis(), 30000, null));
         }
 
         // Create batch of responses

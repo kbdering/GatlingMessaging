@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Perfluencer
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package pl.perfluencer.kafka.actors;
 
 import org.apache.pekko.actor.AbstractActor;
@@ -187,9 +203,12 @@ public class KafkaProducerActor extends AbstractActor {
         }
     }
 
+    private static final Status STATUS_OK = Status.apply("OK");
+    private static final Status STATUS_KO = Status.apply("KO");
+
     private void logMetrics(ProduceMessage message, long start, long end, Exception exception) {
         if (statsEngine != null && message.requestName != null) {
-            Status status = exception == null ? Status.apply("OK") : Status.apply("KO");
+            Status status = exception == null ? STATUS_OK : STATUS_KO;
             Option<String> messageOpt = exception == null ? Option.empty() : Option.apply(exception.getMessage());
             statsEngine.logResponse(
                     message.scenario,
