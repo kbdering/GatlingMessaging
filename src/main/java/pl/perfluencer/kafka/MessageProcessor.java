@@ -203,14 +203,9 @@ public class MessageProcessor {
                 correlationIdToValues.computeIfAbsent(correlationId, k -> new java.util.ArrayList<>())
                         .add(envelope);
             } else {
-                // Cannot extract correlation ID -> Unmatched immediate failure?
-                // Or treat as "Unmatched" which logs error anyway.
-                // Let's wrap in a dummy list to processUnmatchedResponse logic handles it, or
-                // just log here.
-                // Existing logic ignored null correlationId entirely?
-                // Looking at old code: "if (correlationId != null) ... else ..." -> it did
-                // nothing if null.
-                // So efficient skipping.
+                // Cannot extract correlation ID or extractor is missing -> log as error
+                // immediately
+                reportUnmatchedRecord(envelope.record, "Missing correlation ID");
             }
         }
 
@@ -250,7 +245,8 @@ public class MessageProcessor {
                         if (env.attempts < maxRetries) {
                             retries.add(new RetryEnvelope(env.record, env.attempts + 1));
                         } else {
-                            processUnmatchedResponse(correlationId, env.record);
+                            reportUnmatchedRecord(env.record,
+                                    "Request data not found for correlationId: " + correlationId);
                         }
                     }
                 }
@@ -456,37 +452,6 @@ public class MessageProcessor {
                                     (int) (endTime - startTime), status),
                             endTime);
                 }
-
-                private void processUnmatchedResponse(String correlationId, ConsumerRecord<?, ?> record) {
-                    long startTime = defaultEndTime; // Default start time if lookup fails early
-                    String transactionName = "Missing Match"; // Default transaction name
-                    String scenarioName = "Unknown Scenario"; // Default scenario name
-                    Status status = Status.apply("KO"); // Default status is failure
-                    Option<String> errorMessage = Option.apply("Request data not found for correlationId");
-                    Option<String> responseCode = Option.apply("404"); // Simulate Not Found
-
-                    long endTime = defaultEndTime;
-                    if (useTimestampHeader) {
-                        endTime = record.timestamp();
-                        startTime = endTime;
-                    }
-
-                    statsEngine.logResponse(
-                            scenarioName,
-                            MessageProcessor.this.statsGroup,
-                            transactionName,
-                            startTime,
-                            endTime,
-                            status,
-                            responseCode,
-                            errorMessage);
-
-                    statsEngine.logGroupEnd(
-                            scenarioName,
-                            new io.gatling.core.session.GroupBlock(MessageProcessor.this.statsGroup, startTime,
-                                    (int) (endTime - startTime), status),
-                            endTime);
-                }
             });
         } catch (Exception e) {
             // CRITICAL: Stop the test if RequestStore retrieval fails (e.g., Redis down)
@@ -499,6 +464,38 @@ public class MessageProcessor {
         }
 
         return retries;
+    }
+
+    private void reportUnmatchedRecord(ConsumerRecord<?, ?> record, String message) {
+        long defaultEndTime = clock.nowMillis();
+        long startTime = defaultEndTime; // Default start time if lookup fails early
+        String transactionName = "Missing Match"; // Default transaction name
+        String scenarioName = "Unknown Scenario"; // Default scenario name
+        Status status = Status.apply("KO"); // Default status is failure
+        Option<String> errorMessage = Option.apply(message);
+        Option<String> responseCode = Option.apply("404"); // Simulate Not Found
+
+        long endTime = defaultEndTime;
+        if (useTimestampHeader) {
+            endTime = record.timestamp();
+            startTime = endTime;
+        }
+
+        statsEngine.logResponse(
+                scenarioName,
+                this.statsGroup,
+                transactionName,
+                startTime,
+                endTime,
+                status,
+                responseCode,
+                errorMessage);
+
+        statsEngine.logGroupEnd(
+                scenarioName,
+                new io.gatling.core.session.GroupBlock(this.statsGroup, startTime,
+                        (int) (endTime - startTime), status),
+                endTime);
     }
 
     /**
