@@ -6,7 +6,7 @@
 
     <groupId>pl.perfluencer</groupId>
     <artifactId>gatling-kafka-oss</artifactId>
-    <version>0.9.0-beta</version>
+    <version>0.9.1-beta</version>
 
     <name>Resilience-First Messaging Framework (OSS)</name>
     <description>A resilience-first messaging framework for high-integrity load testing, built on Gatling and Kafka</description>
