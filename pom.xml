@@ -10,6 +10,31 @@
 
     <name>Resilience-First Messaging Framework (OSS)</name>
     <description>A resilience-first messaging framework for high-integrity load testing, built on Gatling and Kafka</description>
+    <url>https://github.com/perfluencer/gatling-kafka-oss</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>perfluencer</id>
+            <name>Jakub Dering</name>
+            <email>kuba@perfluencer.pl</email>
+            <organization>Perfluencer</organization>
+            <organizationUrl>https://perfluencer.pl</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/perfluencer/gatling-kafka-oss.git</connection>
+        <developerConnection>scm:git:ssh://github.com:perfluencer/gatling-kafka-oss.git</developerConnection>
+        <url>https://github.com/perfluencer/gatling-kafka-oss</url>
+    </scm>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -38,7 +63,6 @@
             <groupId>org.apache.pekko</groupId>
             <artifactId>pekko-actor_${scala.version}</artifactId>
             <version>1.0.2</version>
-            <scope>provided</scope>
         </dependency>
 
         <!-- Kafka -->
@@ -148,13 +172,13 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
-            <version>1.19.7</version>
+            <version>1.20.4</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>kafka</artifactId>
-            <version>1.19.7</version>
+            <version>1.20.4</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -175,6 +199,62 @@
             </extension>
         </extensions>
         <plugins>
+            <!-- Source Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Javadoc Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <doclint>none</doclint>
+                </configuration>
+            </plugin>
+            <!-- GPG Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.7.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                    <tokenAuth>true</tokenAuth>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -247,6 +327,9 @@
                                     <include>com.jayway.jsonpath:json-path</include>
                                     <include>net.minidev:json-smart</include>
                                     <include>net.minidev:accessors-smart</include>
+                                    <include>org.apache.pekko:pekko-actor_${scala.version}</include>
+                                    <include>com.typesafe:*</include>
+                                    <include>org.scala-lang.modules:*</include>
                                 </includes>
                             </artifactSet>
                         </configuration>

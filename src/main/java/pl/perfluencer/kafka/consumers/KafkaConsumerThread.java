@@ -189,25 +189,82 @@ public class KafkaConsumerThread extends Thread {
 
     private void commitSync() {
         long commitStartTime = System.currentTimeMillis();
-        try {
-            consumer.commitSync();
-        } catch (CommitFailedException e) {
-            logger.debug("Sync offset commit failed", e);
-            reportCommitFailure(commitStartTime, e);
-        } catch (Exception e) {
-            logger.debug("Unexpected error during sync commit", e);
-            reportCommitFailure(commitStartTime, e);
+        int attempts = 0;
+        int maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            try {
+                consumer.commitSync();
+                return; // Success
+            } catch (org.apache.kafka.common.errors.RetriableException e) {
+                attempts++;
+                reportCommitFailure(commitStartTime, e);
+                logger.warn("Retriable error during sync commit (attempt {}/{}).", attempts, maxAttempts, e);
+                if (attempts >= maxAttempts) {
+                    logger.error("Max retries reached for sync commit", e);
+                    return;
+                }
+                try {
+                    Thread.sleep(200L * attempts); // simple linear backoff
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            } catch (CommitFailedException e) {
+                // Occurs when the consumer is not part of the active group anymore (e.g.
+                // rebalance)
+                logger.warn("Sync offset commit failed (non-retriable, likely rebalance)", e);
+                reportCommitFailure(commitStartTime, e);
+                return;
+            } catch (WakeupException e) {
+                if (!running.get()) {
+                    return; // expected during shutdown
+                }
+                logger.error("Unexpected WakeupException during sync commit", e);
+                reportCommitFailure(commitStartTime, e);
+                throw e;
+            } catch (Exception e) {
+                logger.error("Unexpected error during sync commit", e);
+                reportCommitFailure(commitStartTime, e);
+                return;
+            }
         }
     }
 
     private void commitAsync() {
-        final long commitStartTime = System.currentTimeMillis();
-        consumer.commitAsync((offsets, exception) -> {
+        commitAsyncWithRetries(System.currentTimeMillis(), 0, null);
+    }
+
+    private void commitAsyncWithRetries(long commitStartTime, int attempt,
+            java.util.Map<org.apache.kafka.common.TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetsToCommit) {
+        org.apache.kafka.clients.consumer.OffsetCommitCallback callback = (offsets, exception) -> {
             if (exception != null) {
-                logger.debug("Async offset commit failed", exception);
                 reportCommitFailure(commitStartTime, exception);
+                if (exception instanceof org.apache.kafka.common.errors.RetriableException) {
+                    if (attempt < 3) {
+                        logger.warn(
+                                "Retriable error during async commit (attempt {}/3). Retrying asynchronously for offsets: {}",
+                                attempt + 1, offsets, exception);
+                        commitAsyncWithRetries(commitStartTime, attempt + 1, offsets);
+                    } else {
+                        logger.error("Max retries reached for async commit", exception);
+                    }
+                } else {
+                    logger.warn("Async offset commit failed", exception);
+                }
             }
-        });
+        };
+
+        try {
+            if (offsetsToCommit == null) {
+                consumer.commitAsync(callback);
+            } else {
+                consumer.commitAsync(offsetsToCommit, callback);
+            }
+        } catch (Exception e) {
+            logger.error("Error initiating async commit", e);
+            reportCommitFailure(commitStartTime, e);
+        }
     }
 
     private void reportCommitFailure(long startTime, Exception exception) {
