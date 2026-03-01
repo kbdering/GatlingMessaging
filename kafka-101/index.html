@@ -1052,16 +1052,16 @@
 <h2 id="1-producer-architecture">1. Producer Architecture</h2>
 <p>The Gatling Kafka Extension's <code>kafka("...").send()</code> action does not write data directly to the network. Instead, it hands the payload over to the internal Apache Kafka Producer.</p>
 <pre class="mermaid"><code>graph TD
-    subgraph Gatling Simulation Space
-        G1[Gatling Virtual User 1] --&gt;|send()| P_API(Producer API)
-        G2[Gatling Virtual User 2] --&gt;|send()| P_API
-        G3[Gatling Virtual User N] --&gt;|send()| P_API
+    subgraph gatling_sim_space ["Gatling Simulation Space"]
+        G1["Gatling Virtual User 1"] --&gt;|"send()"| P_API("Producer API")
+        G2["Gatling Virtual User 2"] --&gt;|"send()"| P_API
+        G3["Gatling Virtual User N"] --&gt;|"send()"| P_API
     end
 
-    subgraph Kafka Producer Client
+    subgraph kafka_producer_client ["Kafka Producer Client"]
         P_API --&gt;|"Serialize &amp; Hash Key"| Accumulator
 
-        subgraph RecordAccumulator ["Record Accumulator (Memory)"]
+        subgraph record_accumulator ["Record Accumulator (Memory)"]
             B1["Topic A, Partition 0 Batch"]
             B2["Topic A, Partition 1 Batch"]
         end
@@ -1069,17 +1069,17 @@
         Accumulator --&gt; B1
         Accumulator --&gt; B2
 
-        Sender[Sender Thread (Background)] --&gt;|Polls ready batches| B1
+        Sender["Sender Thread (Background)"] --&gt;|"Polls ready batches"| B1
         Sender --&gt; B2
     end
 
-    subgraph Kafka Cluster
-        Broker1[(Kafka Broker 1)]
-        Broker2[(Kafka Broker 2)]
+    subgraph kafka_cluster ["Kafka Cluster"]
+        Broker1[("Kafka Broker 1")]
+        Broker2[("Kafka Broker 2")]
     end
 
-    Sender --&gt;|Network I/O| Broker1
-    Sender --&gt;|Network I/O| Broker2</code></pre>
+    Sender --&gt;|"Network I/O"| Broker1
+    Sender --&gt;|"Network I/O"| Broker2</code></pre>
 <h3 id="how-the-producer-works">How the Producer Works</h3>
 <ol>
 <li><strong>Serialization</strong>: Gatling converts your payload into bytes using the configured Serializer (e.g., String, Avro).</li>
@@ -1122,23 +1122,23 @@
 <h2 id="2-consumer-architecture">2. Consumer Architecture</h2>
 <p>In Gatling Request-Reply tests, a background Consumer Thread constantly polls the response topic to find replies and match them to pending Gatling requests.</p>
 <pre class="mermaid"><code>graph TD
-    subgraph Kafka Cluster
-        P0[Response Topic - Partition 0]
-        P1[Response Topic - Partition 1]
+    subgraph kafka_cluster_2 ["Kafka Cluster"]
+        P0["Response Topic - Partition 0"]
+        P1["Response Topic - Partition 1"]
     end
 
-    subgraph Gatling Consumer
-        CT1[Consumer Thread 1]
+    subgraph gatling_consumer ["Gatling Consumer"]
+        CT1["Consumer Thread 1"]
 
-        CT1 --&gt;|Poll Request| P0
-        CT1 --&gt;|Poll Request| P1
+        CT1 --&gt;|"Poll Request"| P0
+        CT1 --&gt;|"Poll Request"| P1
 
-        subgraph Internal Buffer
-            B[Fetched Records]
+        subgraph internal_buffer ["Internal Buffer"]
+            B["Fetched Records"]
         end
-        CT1 --&gt;|Writes| B
+        CT1 --&gt;|"Writes"| B
 
-        Process[Gatling Correlation Engine] --&gt;|Reads| B
+        Process["Gatling Correlation Engine"] --&gt;|"Reads"| B
     end</code></pre>
 <h3 id="how-the-consumer-works">How the Consumer Works</h3>
 <ol>
