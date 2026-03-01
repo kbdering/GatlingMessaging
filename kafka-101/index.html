@@ -1059,11 +1059,11 @@
     end
 
     subgraph Kafka Producer Client
-        P_API --&gt;|Serialize &amp; Hash Key| Accumulator
+        P_API --&gt;|"Serialize &amp; Hash Key"| Accumulator
 
-        subgraph RecordAccumulator [Record Accumulator (Memory)]
-            B1[Topic A, Partition 0 Batch]
-            B2[Topic A, Partition 1 Batch]
+        subgraph RecordAccumulator ["Record Accumulator (Memory)"]
+            B1["Topic A, Partition 0 Batch"]
+            B2["Topic A, Partition 1 Batch"]
         end
 
         Accumulator --&gt; B1
