@@ -1089,6 +1089,36 @@
 </ol>
 <h3 id="key-producer-parameters">Key Producer Parameters</h3>
 <p>Tuning the producer revolves around balancing the batch size (which improves throughput) against the linger time (which affects latency).</p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant App as Gatling Producer
+    participant Acc as Record Accumulator (Memory)
+    participant Sender as Sender Thread
+    participant Broker as Kafka Broker
+
+    Note over App, Sender: Scenario: linger.ms = 10, batch.size = 16KB
+
+    App-&gt;&gt;Acc: send() - Message 1 (1KB)
+    Note right of Acc: Batch created. Linger timer starts (10ms)
+
+    App-&gt;&gt;Acc: send() - Message 2 (2KB)
+    App-&gt;&gt;Acc: send() - Message 3 (1KB)
+
+    Note over Acc, Sender: ... 10ms passes ...
+
+    Sender-&gt;&gt;Acc: Poll for ready batches
+    Acc--&gt;&gt;Sender: Return Batch (4KB total, 3 messages)
+    Note right of Sender: Batch sent early due to linger.ms expiry
+    Sender-&gt;&gt;Broker: ProduceRequest (4KB)
+    Broker--&gt;&gt;Sender: ProduceResponse (acks)
+
+    Note over App, Sender: Scenario: High Throughput (batch fills up fast)
+
+    App-&gt;&gt;Acc: send() - 16 x Message (1KB each)
+    Note right of Acc: Batch hits 16KB limit!
+    Sender-&gt;&gt;Acc: Poll for ready batches
+    Acc--&gt;&gt;Sender: Return Batch (16KB total, 16 messages)
+    Note right of Sender: Batch sent immediately, linger.ms ignored
+    Sender-&gt;&gt;Broker: ProduceRequest (16KB)</code></pre>
 <h4 id="lingerms-default-0"><code>linger.ms</code> (Default: 0)</h4>
 <ul>
 <li><strong>What it does</strong>: "Artificial delay". How long the Sender Thread should wait for more messages to arrive before sending a partially full batch.</li>
@@ -1147,6 +1177,32 @@
 <li><strong>Processing</strong>: Gatling iterates through the buffer, extracting correlation IDs (keys/headers) and completing the pending Gatling virtual user sessions.</li>
 </ol>
 <h3 id="key-consumer-parameters">Key Consumer Parameters</h3>
+<p>Understanding the relationship between Gatling's internal polling loop and Kafka's fetch requests is crucial for accurately interpreting latency.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant Broker as Kafka Broker
+    participant Consumer as Consumer Thread
+    participant Gatling as Gatling Correlation Engine
+
+    Note over Consumer, Broker: Scenario: fetch.min.bytes=100KB, fetch.max.wait.ms=500ms
+
+    Consumer-&gt;&gt;Broker: FetchRequest
+    Note right of Broker: Only 20KB of data available. Waiting...
+
+    Note over Broker: ... more data arrives on broker ...
+    Note right of Broker: Buffer reaches 100KB!
+
+    Broker--&gt;&gt;Consumer: FetchResponse (100KB)
+    Consumer-&gt;&gt;Gatling: Pass records to matching engine
+
+    Note over Consumer, Broker: Scenario: Timeout scenario
+
+    Consumer-&gt;&gt;Broker: FetchRequest
+    Note right of Broker: 0 bytes available. Waiting...
+
+    Note over Broker: ... 500ms passes (fetch.max.wait.ms) ...
+
+    Broker--&gt;&gt;Consumer: FetchResponse (Empty)
+    Consumer-&gt;&gt;Gatling: Pass empty records (No Matches)</code></pre>
 <h4 id="numconsumers-gatling-dsl-setting"><code>numConsumers</code> (Gatling DSL Setting)</h4>
 <ul>
 <li><strong>What it does</strong>: Sets the number of background Consumer Threads Gatling spins up.</li>
