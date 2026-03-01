@@ -991,6 +991,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Breakdown Metrics (Internal Latency)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#report-groups-ack-vs-e-2-e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Report Groups (ACK vs E-2-E)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1122,6 +1139,12 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">details</span><span class="p">(</span><span class="s">&quot;Checkout-send&quot;</span><span class="p">).</span><span class="na">responseTime</span><span class="p">().</span><span class="na">percentile99</span><span class="p">().</span><span class="na">lt</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
 </code></pre></div>
 <em>(Note: Fine-grain store latency metrics are disabled by default. Enable via <code>.measureStoreLatency(true)</code> on the ProtocolBuilder).</em></p>
+<h3 id="report-groups-ack-vs-e-2-e">Report Groups (ACK vs E-2-E)</h3>
+<p>When viewing the generated Gatling HTML report, you will notice that metrics are organized into specific groups (folders) to help distinguish between isolated network phases:</p>
+<ul>
+<li><strong><code>ACK Group</code></strong>: Measurements inside this folder represent the pure network time it takes to push a message from the Gatling Producer to the Kafka Broker and receive the configured acknowledgment (e.g., <code>acks=all</code>). If this metric is high or experiencing timeouts, the Kafka cluster is struggling to ingest data, or the producer network is congested. It does not measure any downstream processing.</li>
+<li><strong><code>E-2-E Group</code></strong> (End-to-End): Measurements inside this folder represent the full round-trip lifecycle of a <code>requestReply()</code> action. The timer starts when Gatling sends the request, and only stops when the background Consumer thread receives the final correlated response message from the downstream architecture. This metric encompasses the true latency experienced by your system's users.</li>
+</ul>
 <hr />
 <h2 id="metric-injection-jmx-internal-extraction">Metric Injection (JMX Internal Extraction)</h2>
 <p>The Gatling Kafka extension uses the official Apache Kafka Java clients internally. These clients automatically expose an incredibly rich array of diagnostics via <strong>JMX (Java Management Extensions)</strong>.</p>
