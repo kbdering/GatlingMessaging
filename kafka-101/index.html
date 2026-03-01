@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../architecture/">
+        <link rel="prev" href="../getting-started/">
       
       
-        <link rel="next" href="../request-reply/">
+        <link rel="next" href="../architecture/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Configuration - Gatling Kafka Extension</title>
+        <title>Kafka 101 - Gatling Kafka Extension</title>
       
     
     
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#configuration-performance-tuning" class="md-skip">
+        <a href="#kafka-101-architecture-performance" class="md-skip">
           Skip to content
         </a>
       
@@ -110,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Configuration
+              Kafka 101
             
           </span>
         </div>
@@ -245,9 +245,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../kafka-101/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -283,11 +285,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../configuration/" class="md-tabs__link">
         
   
   
@@ -526,10 +526,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../kafka-101/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kafka 101
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -545,6 +572,215 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-producer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Producer Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Producer Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-producer-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Producer Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-producer-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Producer Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Producer Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lingerms-default-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        linger.ms (Default: 0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#batchsize-default-16384-bytes-16kb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        batch.size (Default: 16384 bytes / 16KB)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#acks-default-all-1-in-newer-clients-1-in-older" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        acks (Default: "all" / -1 in newer clients, "1" in older)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compressiontype-default-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compression.type (Default: "none")
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-consumer-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Consumer Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Consumer Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-consumer-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the Consumer Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-consumer-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Consumer Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Consumer Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#numconsumers-gatling-dsl-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        numConsumers (Gatling DSL Setting)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetchminbytes-default-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch.min.bytes (Default: 1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetchmaxwaitms-default-500" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch.max.wait.ms (Default: 500)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#autooffsetreset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        auto.offset.reset
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-cheat-sheet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary Cheat Sheet
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -580,37 +816,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
         
   
   
@@ -626,87 +835,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#base-protocol-setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Base Protocol Setup
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Base Protocol Setup">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#passing-raw-engine-properties" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Passing Raw Engine Properties
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tuning-producer-performance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tuning Producer Performance
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#idempotence-and-exactly-once-transactions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Idempotence and Exactly-Once (Transactions)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#consumer-tuning" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Consumer Tuning
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -917,77 +1045,161 @@
 
 
 
-<h1 id="configuration-performance-tuning">Configuration &amp; Performance Tuning</h1>
-<p>Proper configuration is critical for high-performance Kafka load testing and simulating real-world traffic accurately. All Kafka configuration happens within the <code>KafkaProtocolBuilder</code>.</p>
-<h2 id="base-protocol-setup">Base Protocol Setup</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">org.apache.kafka.clients.producer.ProducerConfig</span><span class="p">;</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">org.apache.kafka.clients.consumer.ConsumerConfig</span><span class="p">;</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">KafkaProtocolBuilder</span><span class="w"> </span><span class="n">protocol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">KafkaDsl</span><span class="p">.</span><span class="na">kafka</span><span class="p">()</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p">.</span><span class="na">bootstrapServers</span><span class="p">(</span><span class="s">&quot;localhost:9092,localhost:9093&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">.</span><span class="na">groupId</span><span class="p">(</span><span class="s">&quot;gatling-loadtest-group&quot;</span><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="p">.</span><span class="na">numProducers</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="p">.</span><span class="na">numConsumers</span><span class="p">(</span><span class="mi">4</span><span class="p">);</span>
-</code></pre></div>
-<h3 id="passing-raw-engine-properties">Passing Raw Engine Properties</h3>
-<p>You can inject standard Apache Kafka properties directly into the Gatling producers and consumers:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">protocol</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="p">.</span><span class="na">producerProperties</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">ACKS_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// Faster than &quot;all&quot;</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">LINGER_MS_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;10&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// Wait for batching</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">BATCH_SIZE_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;131072&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// 128KB batches</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">COMPRESSION_TYPE_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;lz4&quot;</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="p">))</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p">.</span><span class="na">consumerProperties</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">        </span><span class="n">ConsumerConfig</span><span class="p">.</span><span class="na">AUTO_OFFSET_RESET_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;latest&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="n">ConsumerConfig</span><span class="p">.</span><span class="na">FETCH_MIN_BYTES_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1024&quot;</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="p">));</span>
-</code></pre></div>
-<h2 id="tuning-producer-performance">Tuning Producer Performance</h2>
+<h1 id="kafka-101-architecture-performance">Kafka 101: Architecture &amp; Performance</h1>
+<p>To load test Apache Kafka effectively with Gatling, it is crucial to understand the underlying architecture of Kafka Producers and Consumers. Unlike HTTP, which is a simple request-reply protocol over a socket, Kafka uses asynchronous, heavily batched, and thread-driven clients.</p>
+<p>This guide explains the core architecture and how specific configuration parameters directly impact <strong>throughput</strong> (messages per second) and <strong>latency</strong> (time taken to send/receive).</p>
+<hr />
+<h2 id="1-producer-architecture">1. Producer Architecture</h2>
+<p>The Gatling Kafka Extension's <code>kafka("...").send()</code> action does not write data directly to the network. Instead, it hands the payload over to the internal Apache Kafka Producer.</p>
+<pre class="mermaid"><code>graph TD
+    subgraph Gatling Simulation Space
+        G1[Gatling Virtual User 1] --&gt;|send()| P_API(Producer API)
+        G2[Gatling Virtual User 2] --&gt;|send()| P_API
+        G3[Gatling Virtual User N] --&gt;|send()| P_API
+    end
+
+    subgraph Kafka Producer Client
+        P_API --&gt;|Serialize &amp; Hash Key| Accumulator
+
+        subgraph RecordAccumulator [Record Accumulator (Memory)]
+            B1[Topic A, Partition 0 Batch]
+            B2[Topic A, Partition 1 Batch]
+        end
+
+        Accumulator --&gt; B1
+        Accumulator --&gt; B2
+
+        Sender[Sender Thread (Background)] --&gt;|Polls ready batches| B1
+        Sender --&gt; B2
+    end
+
+    subgraph Kafka Cluster
+        Broker1[(Kafka Broker 1)]
+        Broker2[(Kafka Broker 2)]
+    end
+
+    Sender --&gt;|Network I/O| Broker1
+    Sender --&gt;|Network I/O| Broker2</code></pre>
+<h3 id="how-the-producer-works">How the Producer Works</h3>
+<ol>
+<li><strong>Serialization</strong>: Gatling converts your payload into bytes using the configured Serializer (e.g., String, Avro).</li>
+<li><strong>Partitioning</strong>: If a <code>key</code> is provided, Kafka hashes it to determine which partition the message belongs to.</li>
+<li><strong>Accumulation</strong>: The message is added to a memory buffer (<code>RecordAccumulator</code>) specific to that partition.</li>
+<li><strong>Sending</strong>: A background "Sender Thread" continuously wakes up, takes full batches from the accumulator, compresses them, and sends them over the network to the brokers.</li>
+</ol>
+<h3 id="key-producer-parameters">Key Producer Parameters</h3>
+<p>Tuning the producer revolves around balancing the batch size (which improves throughput) against the linger time (which affects latency).</p>
+<h4 id="lingerms-default-0"><code>linger.ms</code> (Default: 0)</h4>
 <ul>
-<li><strong><code>numProducers(int)</code></strong>: <ul>
-<li><strong>Default</strong>: 1</li>
-<li>The underlying Kafka Client handles batching incredibly efficiently within a single thread. Increasing this splits the load into smaller batches, which can <strong>reduce</strong> your overall throughput and compression ratio. Only increase if you observe thread starvation locally.</li>
+<li><strong>What it does</strong>: "Artificial delay". How long the Sender Thread should wait for more messages to arrive before sending a partially full batch.</li>
+<li><strong>Impact</strong>:</li>
+<li><strong>Increase</strong> (e.g., <code>5</code> or <code>10</code>): Greatly increases <strong>Throughput</strong>. Batches fill up more, resulting in fewer network requests, better compression ratios, and lower broker CPU usage.</li>
+<li><strong>Decrease</strong> (<code>0</code>): Best for minimum <strong>Latency</strong>. The thread sends data immediately, but causes massive network/broker overhead at high message rates.</li>
 </ul>
-</li>
-<li><strong><code>linger.ms</code></strong>:<ul>
-<li>Higher values (e.g., 5-10ms) improve batching and throughput at the cost of slight latency. Set to <code>0</code> for absolute minimal latency.</li>
-</ul>
-</li>
-<li><strong><code>batch.size</code></strong>:<ul>
-<li>Increase to <code>65536</code> (64KB) or <code>131072</code> (128KB) for high throughput.</li>
-</ul>
-</li>
-<li><strong><code>acks</code></strong>:<ul>
-<li><code>all</code>: Highest durability (slowest). Ensures data is fully replicated in Kafka before the producer completes.</li>
-<li><code>1</code>: Leader acknowledgement (faster).</li>
-<li><code>0</code>: Fire and forget (fastest, no guarantees).</li>
-</ul>
-</li>
-</ul>
-<h2 id="idempotence-and-exactly-once-transactions">Idempotence and Exactly-Once (Transactions)</h2>
-<p>When doing serious stress testing, clients can resend requests if a broker election happens. Enabling Idempotence protects your metrics from recording duplicate sends. </p>
-<p>Furthermore, if your microservices require Exactly-Once Semantics, you can configure Gatling as a transactional producer. </p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">KafkaProtocolBuilder</span><span class="w"> </span><span class="n">protocol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kafka</span><span class="p">()</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="p">.</span><span class="na">bootstrapServers</span><span class="p">(</span><span class="s">&quot;localhost:9092&quot;</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="p">.</span><span class="na">transactionalId</span><span class="p">(</span><span class="s">&quot;my-transactional-id&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Enables transactions</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="p">.</span><span class="na">numProducers</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="c1">// Each gets a unique suffix: my-transactional-id-0, -1, etc.</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="p">.</span><span class="na">producerProperties</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">ENABLE_IDEMPOTENCE_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">ACKS_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;all&quot;</span><span class="p">,</span><span class="w"> </span><span class="c1">// Required for idempotence/transactions</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="n">ProducerConfig</span><span class="p">.</span><span class="na">RETRIES_CONFIG</span><span class="p">,</span><span class="w"> </span><span class="n">Integer</span><span class="p">.</span><span class="na">MAX_VALUE</span><span class="p">.</span><span class="na">toString</span><span class="p">()</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="p">));</span>
-</code></pre></div>
-<blockquote>
-<p><strong>Note</strong>: When consuming from topics that contain transactional messages, configure your consumers to <code>isolation.level=read_committed</code>.</p>
-</blockquote>
-<h2 id="consumer-tuning">Consumer Tuning</h2>
-<p>The most important consumer property is <strong><code>numConsumers</code></strong>. </p>
+<h4 id="batchsize-default-16384-bytes-16kb"><code>batch.size</code> (Default: 16384 bytes / 16KB)</h4>
 <ul>
-<li><strong>Default</strong>: 1</li>
-<li><strong>Impact</strong>: Number of background Gatling threads polling the response topic.</li>
-<li><strong>Best Practice</strong>: Set this equal to the number of <strong>partitions</strong> of your test topic. Having more consumers than partitions is a waste of resource (they will sit idle).</li>
+<li><strong>What it does</strong>: The maximum size of a single batch in memory. When a batch hits this limit, it is sent immediately regardless of <code>linger.ms</code>.</li>
+<li><strong>Impact</strong>:</li>
+<li><strong>Increase</strong> (e.g., <code>131072</code> / 128KB): Improves <strong>Throughput</strong> for high-volume tests, assuming you also have a non-zero <code>linger.ms</code>.</li>
+<li><strong>Decrease</strong>: Rarely useful unless memory is severely constrained.</li>
 </ul>
+<h4 id="acks-default-all-1-in-newer-clients-1-in-older"><code>acks</code> (Default: "all" / -1 in newer clients, "1" in older)</h4>
+<ul>
+<li><strong>What it does</strong>: The level of durability guarantee required from the broker before the producer considers the send successful.</li>
+<li><strong>Impact</strong>:</li>
+<li><strong><code>acks=all</code></strong>: Highest <strong>Latency</strong>. The leader broker waits for all in-sync replicas to confirm they wrote the data. Required for exact-once semantics.</li>
+<li><strong><code>acks=1</code></strong>: Lower <strong>Latency</strong>. Only the leader acknowledges. Slight risk of data loss.</li>
+<li><strong><code>acks=0</code></strong>: Lowest <strong>Latency</strong> / Highest <strong>Throughput</strong>. "Fire and forget." The producer doesn't wait for any response from the broker.</li>
+</ul>
+<h4 id="compressiontype-default-none"><code>compression.type</code> (Default: "none")</h4>
+<ul>
+<li><strong>What it does</strong>: Compresses full batches before sending them over the network.</li>
+<li><strong>Impact</strong>:</li>
+<li><code>lz4</code> or <code>snappy</code>: Highly recommended. Massively increases <strong>Throughput</strong> by reducing network bottleneck, with very low CPU overhead.</li>
+<li><code>zstd</code>: Best compression ratio (lowest network usage), but higher CPU cost on both client and broker.</li>
+</ul>
+<hr />
+<h2 id="2-consumer-architecture">2. Consumer Architecture</h2>
+<p>In Gatling Request-Reply tests, a background Consumer Thread constantly polls the response topic to find replies and match them to pending Gatling requests.</p>
+<pre class="mermaid"><code>graph TD
+    subgraph Kafka Cluster
+        P0[Response Topic - Partition 0]
+        P1[Response Topic - Partition 1]
+    end
+
+    subgraph Gatling Consumer
+        CT1[Consumer Thread 1]
+
+        CT1 --&gt;|Poll Request| P0
+        CT1 --&gt;|Poll Request| P1
+
+        subgraph Internal Buffer
+            B[Fetched Records]
+        end
+        CT1 --&gt;|Writes| B
+
+        Process[Gatling Correlation Engine] --&gt;|Reads| B
+    end</code></pre>
+<h3 id="how-the-consumer-works">How the Consumer Works</h3>
+<ol>
+<li><strong>Polling</strong>: The Consumer thread calls <code>poll()</code>, sending a Fetch Request to the broker.</li>
+<li><strong>Buffering</strong>: The broker returns a chunk of records. The consumer places them in an internal buffer.</li>
+<li><strong>Processing</strong>: Gatling iterates through the buffer, extracting correlation IDs (keys/headers) and completing the pending Gatling virtual user sessions.</li>
+</ol>
+<h3 id="key-consumer-parameters">Key Consumer Parameters</h3>
+<h4 id="numconsumers-gatling-dsl-setting"><code>numConsumers</code> (Gatling DSL Setting)</h4>
+<ul>
+<li><strong>What it does</strong>: Sets the number of background Consumer Threads Gatling spins up.</li>
+<li><strong>Impact</strong>: </li>
+<li>You should set this <strong>equal to the number of partitions</strong> on your response topic (e.g., if <code>response-topic</code> has 4 partitions, use <code>.numConsumers(4)</code>).</li>
+<li><strong>Too High</strong>: Wasteful. Threads will sit entirely idle because Kafka only allows one consumer per partition within a consumer group.</li>
+<li><strong>Too Low</strong>: Reduces <strong>Throughput</strong> and spikes <strong>Latency</strong>. A single thread will have to sequentially process data from multiple partitions.</li>
+</ul>
+<h4 id="fetchminbytes-default-1"><code>fetch.min.bytes</code> (Default: 1)</h4>
+<ul>
+<li><strong>What it does</strong>: The minimum amount of data the broker should gather before answering the consumer's Fetch Request.</li>
+<li><strong>Impact</strong>:</li>
+<li><strong>Increase</strong> (e.g., <code>100000</code> / 100KB): Increases <strong>Throughput</strong> and reduces broker CPU. The broker waits until it has a good chunk of data before sending it over the network.</li>
+<li><strong>Default (<code>1</code>)</strong>: Best for <strong>Latency</strong>. The broker replies immediately as soon as a single byte of data is available.</li>
+</ul>
+<h4 id="fetchmaxwaitms-default-500"><code>fetch.max.wait.ms</code> (Default: 500)</h4>
+<ul>
+<li><strong>What it does</strong>: The maximum amount of time the broker will block waiting for <code>fetch.min.bytes</code> to be satisfied before replying anyway.</li>
+<li><strong>Impact</strong>: Only relevant if <code>fetch.min.bytes</code> &gt; 1. It acts as an upper bound on the latency introduced by batching.</li>
+</ul>
+<h4 id="autooffsetreset"><code>auto.offset.reset</code></h4>
+<ul>
+<li><strong>What it does</strong>: What the consumer should do when it starts up and there is no committed offset for its group.</li>
+<li><strong>Impact</strong>: For Gatling load tests, this should almost always be <code>latest</code>. If set to <code>earliest</code>, the consumer might spend the first 5 minutes of your test churning through millions of old messages left over from previous tests, resulting in massive false-positive "Timeouts" for your active Gatling virtual users.</li>
+</ul>
+<hr />
+<h2 id="summary-cheat-sheet">Summary Cheat Sheet</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Goal</th>
+<th style="text-align: left;">Producer Configs</th>
+<th style="text-align: left;">Consumer Configs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Maximize Throughput</strong></td>
+<td style="text-align: left;"><code>linger.ms=10</code> <br/> <code>batch.size=131072</code> <br/> <code>acks=1</code> or <code>0</code> <br/> <code>compression.type=lz4</code></td>
+<td style="text-align: left;"><code>fetch.min.bytes=100000</code> <br/> Match <code>numConsumers</code> to partition count</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Minimize Latency</strong></td>
+<td style="text-align: left;"><code>linger.ms=0</code> <br/> <code>acks=1</code> or <code>all</code> (based on safety needs)</td>
+<td style="text-align: left;"><code>fetch.min.bytes=1</code> <br/> <code>fetch.max.wait.ms=100</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>True Chaos Testing</strong></td>
+<td style="text-align: left;"><code>acks=all</code> <br/> <code>retries=MAX_INT</code></td>
+<td style="text-align: left;"><code>isolation.level=read_committed</code> (if txn)</td>
+</tr>
+</tbody>
+</table>
 
 
 
