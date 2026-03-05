@@ -136,7 +136,8 @@ public class KafkaRequestReply<ReqT, ResT> implements ActionBuilder {
      * @return a new builder instance
      */
     public KafkaRequestReply<ReqT, ResT> key(String key) {
-        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, session -> key, valueFunction,
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, KafkaDsl.toJavaFunction(key),
+                valueFunction,
                 requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
                 waitForAck, sessionVariablesToStore, skipPayloadStorage);
     }
@@ -155,13 +156,29 @@ public class KafkaRequestReply<ReqT, ResT> implements ActionBuilder {
     }
 
     /**
+     * Set the message key using a Scala session function.
+     *
+     * @param keyFunction Gatling Scala session expression returning a String
+     * @return a new builder instance
+     */
+    public KafkaRequestReply<ReqT, ResT> keyScala(
+            scala.Function1<io.gatling.core.session.Session, String> keyFunction) {
+        Function<Session, String> mappedFunction = session -> keyFunction.apply(session.asScala());
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, mappedFunction, valueFunction,
+                requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
+                waitForAck, sessionVariablesToStore, skipPayloadStorage);
+    }
+
+    /**
      * Sets the Kafka request payload to a static string.
      *
      * @param value The static string payload.
      * @return a new builder instance
      */
     public KafkaRequestReply<ReqT, ResT> value(String value) {
-        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, session -> value,
+        Function<Session, String> stringFunction = KafkaDsl.toJavaFunction(value);
+        Function<Session, Object> valueFn = session -> stringFunction.apply(session);
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, valueFn,
                 requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
                 waitForAck, sessionVariablesToStore, skipPayloadStorage);
     }
@@ -174,6 +191,20 @@ public class KafkaRequestReply<ReqT, ResT> implements ActionBuilder {
      */
     public KafkaRequestReply<ReqT, ResT> value(Function<Session, Object> valueFunction) {
         return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, valueFunction,
+                requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
+                waitForAck, sessionVariablesToStore, skipPayloadStorage);
+    }
+
+    /**
+     * Set the message value using a Scala session function.
+     *
+     * @param valueFunction Gatling Scala session expression returning an Object
+     * @return a new builder instance
+     */
+    public KafkaRequestReply<ReqT, ResT> valueScala(
+            scala.Function1<io.gatling.core.session.Session, Object> valueFunction) {
+        Function<Session, Object> mappedFunction = session -> valueFunction.apply(session.asScala());
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, mappedFunction,
                 requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
                 waitForAck, sessionVariablesToStore, skipPayloadStorage);
     }
@@ -265,7 +296,28 @@ public class KafkaRequestReply<ReqT, ResT> implements ActionBuilder {
     // ==================== HEADERS ====================
 
     public KafkaRequestReply<ReqT, ResT> header(String key, String value) {
-        headers.put(key, session -> value);
+        headers.put(key, KafkaDsl.toJavaFunction(value));
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, valueFunction,
+                requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
+                waitForAck, sessionVariablesToStore, skipPayloadStorage);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public KafkaRequestReply<ReqT, ResT> headers(Map<String, Object> newHeaders) {
+        for (Map.Entry<String, Object> entry : newHeaders.entrySet()) {
+            if (entry.getValue() instanceof Function) {
+                headers.put(entry.getKey(), (Function<Session, String>) entry.getValue());
+            } else if (entry.getValue() instanceof String) {
+                headers.put(entry.getKey(), KafkaDsl.toJavaFunction((String) entry.getValue()));
+            } else if (entry.getValue() instanceof scala.Function1<?, ?>) {
+                scala.Function1<io.gatling.core.session.Session, String> scalaFunc = (scala.Function1<io.gatling.core.session.Session, String>) entry
+                        .getValue();
+                headers.put(entry.getKey(), session -> scalaFunc.apply(session.asScala()));
+            } else {
+                throw new IllegalArgumentException(
+                        "Header value must be a String, Function<Session, String>, or scala.Function1<Session, String>");
+            }
+        }
         return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, valueFunction,
                 requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
                 waitForAck, sessionVariablesToStore, skipPayloadStorage);
@@ -273,6 +325,14 @@ public class KafkaRequestReply<ReqT, ResT> implements ActionBuilder {
 
     public KafkaRequestReply<ReqT, ResT> header(String key, Function<Session, String> valueFunction) {
         headers.put(key, valueFunction);
+        return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, this.valueFunction,
+                requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
+                waitForAck, sessionVariablesToStore, skipPayloadStorage);
+    }
+
+    public KafkaRequestReply<ReqT, ResT> headerScala(String key,
+            scala.Function1<io.gatling.core.session.Session, String> valueFunction) {
+        headers.put(key, session -> valueFunction.apply(session.asScala()));
         return new KafkaRequestReply<>(requestName, requestTopic, responseTopic, keyFunction, this.valueFunction,
                 requestClass, requestSerde, responseClass, responseSerde, checks, headers, timeout, timeUnit,
                 waitForAck, sessionVariablesToStore, skipPayloadStorage);

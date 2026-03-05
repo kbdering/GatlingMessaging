@@ -146,6 +146,70 @@ setUp(
 );
 ```
 
+## Scala Support
+
+The Java DSL can be used directly from **Gatling Scala simulations**. Every action builder exposes `.asScala()` and the protocol builder exposes `.build()` to bridge into the Scala runtime.
+
+### Fire-and-Forget with Session Variables
+
+```scala
+import io.gatling.core.Predef._
+import pl.perfluencer.kafka.javaapi.KafkaDsl._
+import scala.concurrent.duration._
+
+class KafkaScalaSendSimulation extends Simulation {
+
+  val kafkaProtocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .numProducers(1).numConsumers(1)
+    .producerProperties(java.util.Map.of(
+      "key.serializer", classOf[StringSerializer].getName,
+      "value.serializer", classOf[KafkaAvroSerializer].getName,
+      "schema.registry.url", "http://localhost:8081"
+    ))
+
+  val scn = scenario("Scala Send")
+    .exec { session =>
+      session.set("myPayload", createGenericRecord())
+    }
+    .exec(
+      kafka("Send Avro").send().topic("my-topic")
+        .key(session => session.getString("myKey"))     // Java Session API
+        .value(session => session.get("myPayload"))
+        .asAvro().asScala()
+    )
+
+  setUp(scn.inject(atOnceUsers(1)))
+    .protocols(kafkaProtocol.build())   // .build() required
+}
+```
+
+### Request-Reply
+
+```scala
+.exec(
+  kafka("Order Request").requestReply().asString()
+    .requestTopic("orders-in").responseTopic("orders-out")
+    .key(session => session.getString("myKey"))
+    .value(session => s"""{"orderId":"${session.getString("orderId")}"}""")
+    .check(MessageCheck.responseNotEmpty())
+    .check(Checks.jsonPath("$.status").find().exists())
+    .timeout(10, TimeUnit.SECONDS)
+    .asScala()
+)
+```
+
+### Scala Session API
+
+For idiomatic Scala session access, use `keyScala` / `valueScala`:
+
+```scala
+.keyScala(session => session("myKey").as[String])
+.valueScala(session => session("myPayload").as[GenericRecord])
+```
+
+> **Full documentation:** See the [Scala Integration](docs/scala.md) page for complete examples and patterns.
+
 ## Core Components
 
 *   **`KafkaProducerActor`**: Handles sending messages to Kafka. It uses the standard Kafka Producer API and supports generic `Object` payloads.

@@ -57,6 +57,7 @@ nav:
       - Assertions & Validation: checks-assertions.md
       - Data-Driven Testing: feeders.md
       - Multi-Protocol: multi-protocol.md
+      - Scala Integration: scala.md
       - Resilience & Chaos: resilience-chaos.md
   - Observability:
       - Metrics & Monitoring: metrics.md

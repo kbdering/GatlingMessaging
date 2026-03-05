@@ -443,7 +443,7 @@ public class KafkaDsl {
 
         // New methods with requestName support
 
-        private static Function<Session, String> toJavaFunction(String expression) {
+        public static Function<Session, String> toJavaFunction(String expression) {
                 scala.Function1<io.gatling.core.session.Session, io.gatling.commons.validation.Validation<String>> scalaExpr = Expressions
                                 .toStringExpression(expression);
 
