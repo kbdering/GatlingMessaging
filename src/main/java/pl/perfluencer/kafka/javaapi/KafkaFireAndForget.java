@@ -88,7 +88,7 @@ public class KafkaFireAndForget implements ActionBuilder {
      * Sets the message key using a static value.
      */
     public KafkaFireAndForget key(String key) {
-        this.keyFunction = session -> key;
+        this.keyFunction = KafkaDsl.toJavaFunction(key);
         return this;
     }
 
@@ -100,13 +100,22 @@ public class KafkaFireAndForget implements ActionBuilder {
         return this;
     }
 
+    /**
+     * Sets the message key using a Scala session function.
+     */
+    public KafkaFireAndForget keyScala(scala.Function1<io.gatling.core.session.Session, String> keyFunction) {
+        this.keyFunction = session -> keyFunction.apply(session.asScala());
+        return this;
+    }
+
     // ==================== VALUE CONFIGURATION ====================
 
     /**
      * Sets the message value using a static string.
      */
     public KafkaFireAndForget value(String value) {
-        this.valueFunction = session -> value;
+        Function<Session, String> stringFunction = KafkaDsl.toJavaFunction(value);
+        this.valueFunction = session -> stringFunction.apply(session);
         return this;
     }
 
@@ -116,6 +125,14 @@ public class KafkaFireAndForget implements ActionBuilder {
      */
     public KafkaFireAndForget value(Function<Session, Object> valueFunction) {
         this.valueFunction = valueFunction;
+        return this;
+    }
+
+    /**
+     * Sets the message value using a Scala session function returning any Object.
+     */
+    public KafkaFireAndForget valueScala(scala.Function1<io.gatling.core.session.Session, Object> valueFunction) {
+        this.valueFunction = session -> valueFunction.apply(session.asScala());
         return this;
     }
 
@@ -162,7 +179,24 @@ public class KafkaFireAndForget implements ActionBuilder {
      * Adds a static header to the message.
      */
     public KafkaFireAndForget header(String key, String value) {
-        this.headers.put(key, session -> value);
+        this.headers.put(key, KafkaDsl.toJavaFunction(value));
+        return this;
+    }
+
+    /**
+     * Adds multiple dynamic headers using a map of string/function pairs.
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public KafkaFireAndForget headers(Map<String, Object> newHeaders) {
+        for (Map.Entry<String, Object> entry : newHeaders.entrySet()) {
+            if (entry.getValue() instanceof Function) {
+                this.headers.put(entry.getKey(), (Function<Session, String>) entry.getValue());
+            } else if (entry.getValue() instanceof String) {
+                this.headers.put(entry.getKey(), KafkaDsl.toJavaFunction((String) entry.getValue()));
+            } else {
+                throw new IllegalArgumentException("Header value must be a String or Function<Session, String>");
+            }
+        }
         return this;
     }
 
@@ -171,6 +205,15 @@ public class KafkaFireAndForget implements ActionBuilder {
      */
     public KafkaFireAndForget header(String key, Function<Session, String> valueFunction) {
         this.headers.put(key, valueFunction);
+        return this;
+    }
+
+    /**
+     * Adds a dynamic header using a Scala session function.
+     */
+    public KafkaFireAndForget headerScala(String key,
+            scala.Function1<io.gatling.core.session.Session, String> valueFunction) {
+        this.headers.put(key, session -> valueFunction.apply(session.asScala()));
         return this;
     }
 

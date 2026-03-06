@@ -168,8 +168,9 @@ public class CorrelationStrategyTest {
         processor.process(Collections.singletonList(record));
 
         // Verify
-        // MessageProcessor ignores records with null correlation IDs
-        assertFalse("Null key should NOT log response (ignored)", statsRecorder.wasResponseLogged());
+        // MessageProcessor now reports records with null correlation IDs as errors
+        assertTrue("Null key should log an error response", statsRecorder.wasResponseLogged());
+        assertEquals("Should be KO (missing correlation ID)", "KO", statsRecorder.getRecordedStatus().name());
         assertNotNull("Request should still be in store", requestStore.getRequest(correlationId));
     }
 
