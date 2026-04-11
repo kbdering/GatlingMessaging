@@ -22,6 +22,11 @@ Gatling 4.0+ no longer compiles Scala code natively. Bring in the `scala-maven-p
 </plugin>
 ```
 
+Alternatively, newer versions of the `gatling-maven-plugin` (v4.x+) can handle compilation if configured appropriately. For this project, we explicitly use the `scala-maven-plugin` for fine-grained control over test compilation.
+
+</plugin>
+```
+
 Place your Scala simulations in `src/test/scala/`.
 
 ## Key Concepts

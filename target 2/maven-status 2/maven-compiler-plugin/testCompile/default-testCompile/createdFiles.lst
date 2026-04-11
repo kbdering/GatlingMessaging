@@ -1,0 +1,14 @@
+pl/perfluencer/kafka/protobuf/PersonProto.class
+pl/perfluencer/kafka/protobuf/Person.class
+pl/perfluencer/kafka/protobuf/PersonOrBuilder.class
+pl/perfluencer/kafka/proto/DummyResponseOrBuilder.class
+pl/perfluencer/kafka/proto/DummyResponse$1.class
+pl/perfluencer/kafka/proto/DummyResponse.class
+pl/perfluencer/kafka/proto/DummyRequest$1.class
+pl/perfluencer/kafka/proto/DummyRequest.class
+pl/perfluencer/kafka/protobuf/Person$Builder.class
+pl/perfluencer/kafka/protobuf/Person$1.class
+pl/perfluencer/kafka/proto/DummyRequestOrBuilder.class
+pl/perfluencer/kafka/proto/DummyRequest$Builder.class
+pl/perfluencer/kafka/proto/DummyMessage.class
+pl/perfluencer/kafka/proto/DummyResponse$Builder.class
