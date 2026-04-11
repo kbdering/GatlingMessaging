@@ -242,16 +242,36 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
                                 ctx.coreComponents().statsEngine(),
                                 concreteProtocol.getPollTimeout(),
                                 concreteProtocol.isSyncCommit(),
-                                i);
+                                i,
+                                null, // consumeOnlyRequestName
+                                null, // consumeOnlyScenarioName
+                                List$.MODULE$.empty(), // statsGroup
+                                concreteProtocol.isSeekToEndOnReady());
                         thread.start();
                         consumerThreads.add(thread);
                     }
-                    LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).debug(
-                            "Successfully started {} consumer threads for topic: {}", consumerThreads.size(),
-                            responseTopic);
 
-                    concreteProtocol.putConsumerAndProcessor(responseTopic,
-                            new KafkaProtocolBuilder.ConsumerAndProcessor(consumerThreads, messageProcessor));
+                    KafkaProtocolBuilder.ConsumerAndProcessor cap = new KafkaProtocolBuilder.ConsumerAndProcessor(
+                            consumerThreads, messageProcessor);
+
+                    // Optional synchronization barrier: block until consumers have partitions
+                    if (concreteProtocol.isAwaitConsumersReady() && !consumerThreads.isEmpty()) {
+                        long start = System.currentTimeMillis();
+                        LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).info(
+                                "Waiting for Kafka consumers to be ready for topic: {} (timeout: {})",
+                                responseTopic, concreteProtocol.getConsumerReadyTimeout());
+
+                        if (!cap.awaitAllReady(concreteProtocol.getConsumerReadyTimeout())) {
+                            throw new IllegalStateException("Kafka consumers for topic " + responseTopic +
+                                    " failed to become ready within " + concreteProtocol.getConsumerReadyTimeout());
+                        }
+
+                        LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).info(
+                                "Kafka consumers for topic: {} are ready after {}ms",
+                                responseTopic, (System.currentTimeMillis() - start));
+                    }
+
+                    concreteProtocol.putConsumerAndProcessor(responseTopic, cap);
                 }
 
                 return new KafkaRequestReplyAction(requestName, concreteProtocol, ctx.coreComponents(), next,

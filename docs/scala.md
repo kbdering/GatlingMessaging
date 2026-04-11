@@ -4,21 +4,21 @@ The Gatling Kafka Extension's Java API can be used directly from **Scala** simul
 
 ## Prerequisites
 
-The `gatling-maven-plugin` handles Scala compilation natively via its `compile` goal. Ensure your `pom.xml` includes it:
+Gatling 4.0+ no longer compiles Scala code natively. Bring in the `scala-maven-plugin` to compile your sources under `src/test/scala/`:
 
 ```xml
 <plugin>
-    <groupId>io.gatling</groupId>
-    <artifactId>gatling-maven-plugin</artifactId>
-    <version>4.21.0</version>
+    <groupId>net.alchim31.maven</groupId>
+    <artifactId>scala-maven-plugin</artifactId>
+    <version>4.9.1</version>
     <executions>
         <execution>
-            <goals>
-                <goal>compile</goal>
-                <goal>test</goal>
-            </goals>
+            <goals><goal>testCompile</goal></goals>
         </execution>
     </executions>
+    <configuration>
+        <scalaVersion>2.13.14</scalaVersion>
+    </configuration>
 </plugin>
 ```
 

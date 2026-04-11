@@ -6,7 +6,7 @@
 
     <groupId>pl.perfluencer</groupId>
     <artifactId>gatling-kafka-oss</artifactId>
-    <version>0.9.2-beta</version>
+    <version>0.9.3-beta</version>
 
     <name>Resilience-First Messaging Framework (OSS)</name>
     <description>A resilience-first messaging framework for high-integrity load testing, built on Gatling and Kafka</description>
@@ -252,13 +252,27 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
-                    <tokenAuth>true</tokenAuth>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
+            </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <version>4.9.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <scalaVersion>${scala.version}.14</scalaVersion>
+                </configuration>
             </plugin>
 
             <plugin>
@@ -341,14 +355,6 @@
                 <groupId>io.gatling</groupId>
                 <artifactId>gatling-maven-plugin</artifactId>
                 <version>4.21.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <!--<goal>compile</goal>-->
-                            <goal>test</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
