@@ -56,6 +56,10 @@ public class KafkaIntegrationTest {
     private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("confluentinc/cp-kafka:7.4.0");
     private static KafkaContainer kafka;
 
+    static {
+        TestConfig.init();
+    }
+
     @BeforeClass
     public static void setUp() throws ExecutionException, InterruptedException {
         kafka = new KafkaContainer(KAFKA_IMAGE);

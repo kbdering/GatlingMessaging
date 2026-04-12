@@ -57,8 +57,13 @@ import pl.perfluencer.common.checks.Checks; // Checks.jsonPath() to avoid clash 
  * }</pre>
  */
 public class KafkaFluentCheckChainSimulation extends Simulation {
-        private static final String BOOTSTRAP_SERVERS = System.getProperty(
-                        "kafka.bootstrap.servers", "192.168.1.143:9094");
+
+    static {
+        TestConfig.init();
+    }
+
+    private static final String BOOTSTRAP_SERVERS = System.getProperty(
+                    "kafka.bootstrap.servers", "localhost:9092");
         private static final String TOPIC = System.getProperty(
                         "kafka.topic", "lab-test-topic");
 

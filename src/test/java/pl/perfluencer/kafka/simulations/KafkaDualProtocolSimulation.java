@@ -54,8 +54,13 @@ import static pl.perfluencer.kafka.MessageCheck.*;
  */
 public class KafkaDualProtocolSimulation extends Simulation {
 
-        private static final String BOOTSTRAP_SERVERS = System.getProperty(
-                        "kafka.bootstrap.servers", "192.168.1.143:9094");
+    static {
+        TestConfig.init();
+    }
+
+
+    private static final String BOOTSTRAP_SERVERS = System.getProperty(
+                    "kafka.bootstrap.servers", "localhost:9092");
 
         private static final String JSON_TOPIC = "lab-json-test-topic";
         private static final String AVRO_TOPIC = "lab-avro-test-topic";

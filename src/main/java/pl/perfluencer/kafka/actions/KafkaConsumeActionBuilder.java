@@ -152,7 +152,8 @@ public class KafkaConsumeActionBuilder<T> implements ActionBuilder {
                             concreteProtocol.getRetryBackoff(),
                             concreteProtocol.getMaxRetries(),
                             concreteProtocol.getParserRegistry(),
-                            CONSUME_ONLY_GROUP);
+                            CONSUME_ONLY_GROUP,
+                            concreteProtocol.getLeakageScenarioName());
 
                     // Create consumer threads in consume-only mode
                     java.util.List<pl.perfluencer.kafka.consumers.KafkaConsumerThread> consumerThreads = new java.util.ArrayList<>();

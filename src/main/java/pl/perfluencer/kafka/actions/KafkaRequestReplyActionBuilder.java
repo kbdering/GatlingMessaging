@@ -227,7 +227,9 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
                             concreteProtocol.isUseTimestampHeader(),
                             concreteProtocol.getRetryBackoff(),
                             concreteProtocol.getMaxRetries(),
-                            concreteProtocol.getParserRegistry());
+                            concreteProtocol.getParserRegistry(),
+                            concreteProtocol.getLeakageGroup(),
+                            concreteProtocol.getLeakageScenarioName());
 
                     // Create consumer threads
                     LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).debug(

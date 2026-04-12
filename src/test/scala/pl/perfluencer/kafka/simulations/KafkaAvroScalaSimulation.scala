@@ -16,8 +16,10 @@ import scala.concurrent.duration._
 import java.util.UUID
 
 class KafkaAvroScalaSimulation extends Simulation {
+  pl.perfluencer.kafka.integration.TestConfig.init()
 
-  private val BOOTSTRAP_SERVERS = System.getProperty("kafka.bootstrap.servers", "192.168.1.143:9094")
+
+  private val BOOTSTRAP_SERVERS = System.getProperty("kafka.bootstrap.servers", "localhost:9092")
   private val SCHEMA_REGISTRY_URL = System.getProperty("schema.registry.url", "http://localhost:8081")
   private val AVRO_TOPIC = "lab-avro-test-topic"
 

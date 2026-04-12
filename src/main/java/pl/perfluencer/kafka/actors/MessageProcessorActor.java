@@ -38,7 +38,8 @@ public class MessageProcessorActor extends AbstractActor {
                         java.util.concurrent.ConcurrentMap<String, List<MessageCheck<?, ?>>> checkRegistry,
                         java.util.List<MessageCheck<?, ?>> globalChecks,
                         CorrelationExtractor correlationExtractor,
-                        boolean useTimestampHeader, Duration retryBackoff, int maxRetries) {
+                        boolean useTimestampHeader, Duration retryBackoff, int maxRetries,
+                        String leakageScenarioName) {
                 this.messageProcessor = new MessageProcessor(
                                 requestStore,
                                 coreComponents.statsEngine(),
@@ -50,7 +51,10 @@ public class MessageProcessorActor extends AbstractActor {
                                 correlationExtractor,
                                 useTimestampHeader,
                                 retryBackoff,
-                                maxRetries);
+                                maxRetries,
+                                null,
+                                MessageProcessor.E2E_GROUP_COLLECTION(), // Default group
+                                leakageScenarioName);
         }
 
         // Constructor for testing
@@ -62,14 +66,15 @@ public class MessageProcessorActor extends AbstractActor {
                 this.messageProcessor = new MessageProcessor(requestStore, statsEngine, clock, null, checkRegistry,
                                 null, null,
                                 correlationExtractor,
-                                useTimestampHeader, Duration.ofMillis(50), 3);
+                                useTimestampHeader, Duration.ofMillis(50), 3, null, MessageProcessor.E2E_GROUP_COLLECTION(),
+                                "Gatling Data Leakage Audit");
         }
 
         public static Props props(RequestStore requestStore, CoreComponents coreComponents,
                         java.util.concurrent.ConcurrentMap<String, List<MessageCheck<?, ?>>> checkRegistry,
                         java.util.List<MessageCheck<?, ?>> globalChecks,
                         CorrelationExtractor correlationExtractor, boolean useTimestampHeader,
-                        Duration retryBackoff, int maxRetries) {
+                        Duration retryBackoff, int maxRetries, String leakageScenarioName) {
                 // Ensure dependencies are non-null if required
                 java.util.Objects.requireNonNull(requestStore, "RequestStore cannot be null");
                 java.util.Objects.requireNonNull(coreComponents, "CoreComponents cannot be null");
@@ -78,7 +83,7 @@ public class MessageProcessorActor extends AbstractActor {
                                                 globalChecks,
                                                 correlationExtractor,
                                                 useTimestampHeader,
-                                                retryBackoff, maxRetries));
+                                                retryBackoff, maxRetries, leakageScenarioName));
         }
 
         public static Props props(RequestStore requestStore, CoreComponents coreComponents,
@@ -87,7 +92,7 @@ public class MessageProcessorActor extends AbstractActor {
                 // Default legacy fallback for tests
                 return props(requestStore, coreComponents, checkRegistry, null,
                                 new pl.perfluencer.kafka.extractors.HeaderExtractor(correlationHeaderName), false,
-                                Duration.ofMillis(50), 3);
+                                Duration.ofMillis(50), 3, "Gatling Data Leakage Audit");
         }
 
         public static class RetryBatch {

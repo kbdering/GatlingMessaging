@@ -48,7 +48,11 @@ public class MessageProcessor {
     private static final scala.collection.immutable.List<String> E2E_GROUP = scala.collection.immutable.List$.MODULE$
             .from(
                     scala.jdk.javaapi.CollectionConverters
-                            .asScala(java.util.Collections.singletonList("End-to-End Group")));
+                            .asScala(java.util.Collections.singletonList("Orphaned Responses")));
+
+    public static scala.collection.immutable.List<String> E2E_GROUP_COLLECTION() {
+        return E2E_GROUP;
+    }
     private final RequestStore requestStore;
     private final StatsEngine statsEngine;
     private final Clock clock;
@@ -63,6 +67,7 @@ public class MessageProcessor {
     private final int maxRetries;
     private final ParserRegistry parserRegistry;
     private final scala.collection.immutable.List<String> statsGroup;
+    private final String fallbackScenarioName;
 
     // Fallback cache for reflection when no registered parser exists
     private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method> PROTOBUF_METHOD_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
@@ -73,7 +78,7 @@ public class MessageProcessor {
             boolean useTimestampHeader) {
         this(requestStore, statsEngine, clock, controller, new java.util.concurrent.ConcurrentHashMap<>(), checks, null,
                 correlationExtractor, useTimestampHeader,
-                Duration.ofMillis(50), 3, null, E2E_GROUP);
+                Duration.ofMillis(50), 3, null, E2E_GROUP, "Gatling Data Leakage Audit");
     }
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
@@ -83,7 +88,7 @@ public class MessageProcessor {
             boolean useTimestampHeader) {
         this(requestStore, statsEngine, clock, controller, new java.util.concurrent.ConcurrentHashMap<>(), checks,
                 sessionAwareChecks, correlationExtractor,
-                useTimestampHeader, Duration.ofMillis(50), 3, null, E2E_GROUP);
+                useTimestampHeader, Duration.ofMillis(50), 3, null, E2E_GROUP, "Gatling Data Leakage Audit");
     }
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
@@ -94,7 +99,7 @@ public class MessageProcessor {
             CorrelationExtractor correlationExtractor,
             boolean useTimestampHeader, Duration retryBackoff, int maxRetries) {
         this(requestStore, statsEngine, clock, controller, checkRegistry, globalChecks, sessionAwareChecks,
-                correlationExtractor, useTimestampHeader, retryBackoff, maxRetries, null, E2E_GROUP);
+                correlationExtractor, useTimestampHeader, retryBackoff, maxRetries, null, E2E_GROUP, "Gatling Data Leakage Audit");
     }
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
@@ -106,7 +111,7 @@ public class MessageProcessor {
             boolean useTimestampHeader, Duration retryBackoff, int maxRetries,
             ParserRegistry parserRegistry) {
         this(requestStore, statsEngine, clock, controller, checkRegistry, globalChecks, sessionAwareChecks,
-                correlationExtractor, useTimestampHeader, retryBackoff, maxRetries, parserRegistry, E2E_GROUP);
+                correlationExtractor, useTimestampHeader, retryBackoff, maxRetries, parserRegistry, E2E_GROUP, "Gatling Data Leakage Audit");
     }
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
@@ -117,7 +122,8 @@ public class MessageProcessor {
             CorrelationExtractor correlationExtractor,
             boolean useTimestampHeader, Duration retryBackoff, int maxRetries,
             ParserRegistry parserRegistry,
-            scala.collection.immutable.List<String> statsGroup) {
+            scala.collection.immutable.List<String> statsGroup,
+            String fallbackScenarioName) {
         this.requestStore = requestStore;
         this.statsEngine = statsEngine;
         this.clock = clock;
@@ -131,6 +137,7 @@ public class MessageProcessor {
         this.maxRetries = maxRetries;
         this.parserRegistry = parserRegistry;
         this.statsGroup = statsGroup;
+        this.fallbackScenarioName = fallbackScenarioName != null ? fallbackScenarioName : "Gatling Data Leakage Audit";
     }
 
     public MessageProcessor(RequestStore requestStore, StatsEngine statsEngine, Clock clock,
@@ -140,7 +147,7 @@ public class MessageProcessor {
             boolean useTimestampHeader, Duration retryBackoff, int maxRetries) {
         this(requestStore, statsEngine, clock, controller, new java.util.concurrent.ConcurrentHashMap<>(), checks,
                 sessionAwareChecks, correlationExtractor, useTimestampHeader, retryBackoff, maxRetries, null,
-                E2E_GROUP);
+                E2E_GROUP, "Gatling Data Leakage Audit");
     }
 
     // Envelope to track retry attempts
@@ -470,7 +477,7 @@ public class MessageProcessor {
         long defaultEndTime = clock.nowMillis();
         long startTime = defaultEndTime; // Default start time if lookup fails early
         String transactionName = "Missing Match"; // Default transaction name
-        String scenarioName = "Unknown Scenario"; // Default scenario name
+        String scenarioName = this.fallbackScenarioName; // Use configured leakage scenario
         Status status = Status.apply("KO"); // Default status is failure
         Option<String> errorMessage = Option.apply(message);
         Option<String> responseCode = Option.apply("404"); // Simulate Not Found

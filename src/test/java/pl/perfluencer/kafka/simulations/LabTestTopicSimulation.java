@@ -49,9 +49,14 @@ import static io.gatling.javaapi.core.CoreDsl.*;
  */
 public class LabTestTopicSimulation extends Simulation {
 
+    static {
+        TestConfig.init();
+    }
+
+
         // Configuration - can be overridden with system properties
-        private static final String BOOTSTRAP_SERVERS = System.getProperty(
-                        "kafka.bootstrap.servers", "192.168.1.143:9094");
+    private static final String BOOTSTRAP_SERVERS = System.getProperty(
+                    "kafka.bootstrap.servers", "localhost:9092");
         private static final String TOPIC = System.getProperty(
                         "kafka.topic", "lab-test-topic");
 
