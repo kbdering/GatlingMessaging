@@ -382,7 +382,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
             requestStore.storeRequest(new RequestData(correlationId, resolvedKey, skipPayloadStorage ? null : valueObj,
                     serializationType, requestName,
-                    session.scenario(), startTime, timeUnit.toMillis(timeout), sessionVars));
+                    session.scenario(), startTime, timeUnit.toMillis(timeout), sessionVars, session.groups()));
             long storeEnd = coreComponents.clock().nowMillis();
 
             if (((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).isMeasureStoreLatency()) {

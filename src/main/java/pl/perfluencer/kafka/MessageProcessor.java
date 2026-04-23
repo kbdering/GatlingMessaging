@@ -442,7 +442,7 @@ public class MessageProcessor {
 
                     statsEngine.logResponse(
                             scenarioName,
-                            MessageProcessor.this.statsGroup, // groups
+                            requestData.groups, // Use the actual groups from the original session
                             transactionName, // name
                             startTime,
                             endTime,

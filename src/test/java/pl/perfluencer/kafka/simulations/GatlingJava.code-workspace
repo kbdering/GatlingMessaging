@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../../.."
+		},
+		{
+			"path": "../../../../../../../../GatlingMessagingEnterprise"
+		},
+		{
+			"path": "../../../../../../../../event-driven-tutorial"
+		}
+	],
+	"settings": {
+		"java.compile.nullAnalysis.mode": "automatic",
+		"java.configuration.updateBuildConfiguration": "interactive"
+	}
+}

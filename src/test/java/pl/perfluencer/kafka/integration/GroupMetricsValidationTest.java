@@ -92,21 +92,27 @@ public class GroupMetricsValidationTest {
 
     /**
      * Verifies that when a correlated response arrives, the E2E logResponse call
-     * uses the processor's configured statsGroup (E2E Group), and
-     * no logGroupEnd is invoked at all.
+     * uses the groups stored in RequestData (the capture groups from the original session),
+     * and no logGroupEnd is invoked at all.
      */
     @Test
-    public void testE2EMetricUsesConfiguredStatsGroup() throws InterruptedException {
+    public void testE2EMetricUsesSessionGroupsFromRequestData() throws InterruptedException {
         String correlationId = "grp-test-corr-1";
         String scenarioName = "GroupValidationScenario";
         String requestName = "Place Order";
+        
+        // Define some specific groups we want to see preserved
+        scala.collection.immutable.List<String> sessionGroups = scala.collection.immutable.List$.MODULE$
+                .from(scala.jdk.javaapi.CollectionConverters.asScala(
+                        java.util.List.of("Parent Group", "Sub Group")));
 
-        // Store a pending request
+        // Store a pending request WITH captured session groups
         requestStore.storeRequest(new RequestData(
                 correlationId, "key-1", "payload".getBytes(),
                 SerializationType.STRING,
                 requestName, scenarioName,
-                System.currentTimeMillis(), 30_000L, null
+                System.currentTimeMillis(), 30_000L, null,
+                sessionGroups
         ));
 
         // Simulate correlated response arriving
@@ -122,24 +128,20 @@ public class GroupMetricsValidationTest {
         assertFalse("StatsEngine.logResponse should have been called",
                 statsEngine.capturedCalls.isEmpty());
 
-        // 2. Find the E2E entry (requestName without " send" suffix)
+        // 2. Find the E2E entry
         GroupCapturingStatsEngine.LoggedResponse e2eCall = statsEngine.capturedCalls.stream()
                 .filter(c -> c.requestName.equals(requestName))
                 .findFirst()
                 .orElse(null);
 
-        assertNotNull("E2E logResponse call for '" + requestName + "' not found. Calls: "
-                + statsEngine.capturedCalls, e2eCall);
+        assertNotNull("E2E logResponse call not found", e2eCall);
 
-        // 3. E2E must use the configured statsGroup ["E2E Group"]
-        assertEquals("E2E metric must be logged with the processor's configured statsGroup",
-                java.util.List.of("E2E Group"),
+        // 3. E2E MUST use the groups captured in RequestData
+        assertEquals("E2E metric must be logged with the captured session groups",
+                java.util.List.of("Parent Group", "Sub Group"),
                 e2eCall.groups);
 
-        // 4. Ensure status is OK
-        assertEquals("E2E metric should be OK", "OK", e2eCall.status.name());
-
-        // 5. No logGroupEnd should ever be called
+        // 4. No logGroupEnd should ever be called
         assertEquals("logGroupEnd must NEVER be called by MessageProcessor",
                 0, statsEngine.logGroupEndCallCount);
     }

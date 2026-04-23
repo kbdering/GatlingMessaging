@@ -20,6 +20,7 @@ import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 
 import java.time.Duration;

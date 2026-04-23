@@ -5,6 +5,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 
 import java.time.Duration;
 import java.util.Map;

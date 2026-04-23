@@ -22,6 +22,7 @@ import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;

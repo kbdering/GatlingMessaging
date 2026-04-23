@@ -21,6 +21,7 @@ import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.common.checks.Checks;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
