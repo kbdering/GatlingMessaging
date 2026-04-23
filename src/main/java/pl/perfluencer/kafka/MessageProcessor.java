@@ -45,10 +45,7 @@ import pl.perfluencer.common.util.ParserRegistry;
 
 public class MessageProcessor {
     private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
-    private static final scala.collection.immutable.List<String> E2E_GROUP = scala.collection.immutable.List$.MODULE$
-            .from(
-                    scala.jdk.javaapi.CollectionConverters
-                            .asScala(java.util.Collections.singletonList("Orphaned Responses")));
+    private static final scala.collection.immutable.List<String> E2E_GROUP = scala.collection.immutable.List$.MODULE$.empty();
 
     public static scala.collection.immutable.List<String> E2E_GROUP_COLLECTION() {
         return E2E_GROUP;
@@ -498,11 +495,6 @@ public class MessageProcessor {
                 responseCode,
                 errorMessage);
 
-        statsEngine.logGroupEnd(
-                scenarioName,
-                new io.gatling.core.session.GroupBlock(this.statsGroup, startTime,
-                        (int) (endTime - startTime), status),
-                endTime);
     }
 
     /**
