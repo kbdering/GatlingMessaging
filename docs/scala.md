@@ -96,7 +96,8 @@ There are **two ways** to access Gatling session variables from Scala:
     )
     ```
 
-Both approaches work equivalently. The `keyScala`/`valueScala` variants are available on `KafkaFireAndForget`, `KafkaRequestReply`, and their header counterparts.
+Both approaches work equivalently. The `keyScala` and `valueScala` variants are available on `KafkaFireAndForget` and `KafkaRequestReply`.
+For headers, you can use `headerScala(key, session => ...)` or pass a mixed Java/Scala map to `headers(Map<String, Object>)` where values can be `scala.Function1`.
 
 ## Fire-and-Forget Example
 
