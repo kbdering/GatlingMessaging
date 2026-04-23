@@ -68,6 +68,7 @@ public class AvroIntegrationTest {
 
     @BeforeClass
     public static void setUp() {
+        TestConfig.init();
         network = Network.newNetwork();
 
         kafka = new KafkaContainer(KAFKA_IMAGE)

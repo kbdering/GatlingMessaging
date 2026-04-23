@@ -70,9 +70,34 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     private Duration pollTimeout = Duration.ofMillis(100);
     private pl.perfluencer.cache.config.CoreStoreConfig storeConfig = new pl.perfluencer.cache.config.CoreStoreConfig();
     private boolean syncCommit = false;
+    private boolean awaitConsumersReady = false;
+    private boolean seekToEndOnReady = false;
+    private Duration consumerReadyTimeout = Duration.ofSeconds(30);
 
     private final java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks = new java.util.ArrayList<>();
     private final ParserRegistry parserRegistry = new ParserRegistry();
+    private String leakageScenarioName = "Gatling Data Leakage Audit";
+    private scala.collection.immutable.List<String> leakageGroup = scala.collection.immutable.List$.MODULE$
+            .from(scala.jdk.javaapi.CollectionConverters.asScala(java.util.Collections.singletonList("Orphaned Responses")));
+
+    /**
+     * Sets the Gatling group names for reporting leaked or unmapped messages.
+     * Default: ["End to End"]
+     *
+     * @param groups the list of group names
+     * @return this builder
+     */
+    public KafkaProtocolBuilder leakageGroups(String... groups) {
+        if (groups != null) {
+            this.leakageGroup = scala.collection.immutable.List$.MODULE$
+                    .from(scala.jdk.javaapi.CollectionConverters.asScala(java.util.Arrays.asList(groups)));
+        }
+        return this;
+    }
+
+    public scala.collection.immutable.List<String> getLeakageGroup() {
+        return leakageGroup;
+    }
 
     public KafkaProtocolBuilder check(pl.perfluencer.kafka.MessageCheck<?, ?> check) {
         this.globalChecks.add(check);
@@ -133,6 +158,20 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         return parserRegistry;
     }
 
+    /**
+     * Sets a custom scenario name for reporting leaked or unmapped messages.
+     * These are messages received by a consumer that cannot be correlated to any
+     * active request in the store.
+     * Default: "Gatling Data Leakage Audit"
+     *
+     * @param name the descriptive name for the leakage scenario
+     * @return this builder
+     */
+    public KafkaProtocolBuilder leakageScenarioName(String name) {
+        this.leakageScenarioName = name;
+        return this;
+    }
+
     public KafkaProtocolBuilder pollTimeout(Duration timeout) {
         this.pollTimeout = timeout;
         return this;
@@ -146,6 +185,42 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
      */
     public KafkaProtocolBuilder syncCommit(boolean syncCommit) {
         this.syncCommit = syncCommit;
+        return this;
+    }
+
+    /**
+     * When enabled, the action builders will block until all consumer threads have
+     * been assigned partitions by the Kafka group coordinator before allowing any
+     * messages to be sent. This prevents a race condition where messages are produced
+     * before consumers are ready to receive them.
+     * Default: {@code false}.
+     */
+    public KafkaProtocolBuilder awaitConsumersReady(boolean awaitConsumersReady) {
+        this.awaitConsumersReady = awaitConsumersReady;
+        return this;
+    }
+
+    /**
+     * When enabled, each consumer thread will forcibly seek to the end of all
+     * assigned partitions once it connects. This guarantees that only messages
+     * produced <em>after</em> the consumer is ready will be consumed, skipping
+     * any pre-existing messages on the topic (e.g., from a previous test run).
+     * Default: {@code false}.
+     */
+    public KafkaProtocolBuilder seekToEndOnReady(boolean seekToEndOnReady) {
+        this.seekToEndOnReady = seekToEndOnReady;
+        return this;
+    }
+
+    /**
+     * Maximum time to wait for all consumer threads to become ready (receive
+     * partition assignment from the Kafka group coordinator). If the timeout
+     * expires before all consumers are ready, an {@code IllegalStateException}
+     * is thrown and the simulation fails fast.
+     * Default: 30 seconds.
+     */
+    public KafkaProtocolBuilder consumerReadyTimeout(Duration timeout) {
+        this.consumerReadyTimeout = timeout;
         return this;
     }
 
@@ -290,6 +365,21 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 thread.shutdown();
             }
         }
+
+        /**
+         * Blocks until all consumer threads have been assigned partitions.
+         *
+         * @param timeout maximum time to wait for each thread
+         * @return {@code true} if all threads became ready, {@code false} if any timed out
+         */
+        public boolean awaitAllReady(Duration timeout) {
+            for (pl.perfluencer.kafka.consumers.KafkaConsumerThread thread : consumerThreads) {
+                if (!thread.awaitReady(timeout)) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     public static class KafkaProtocol implements Protocol {
@@ -309,6 +399,9 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final Duration retryBackoff;
         private final int maxRetries;
         private final boolean syncCommit;
+        private final boolean awaitConsumersReady;
+        private final boolean seekToEndOnReady;
+        private final Duration consumerReadyTimeout;
 
         private final List<KafkaProducer<String, Object>> producers = new ArrayList<>();
         private final AtomicInteger producerIndex = new AtomicInteger(0);
@@ -316,6 +409,8 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         private final java.util.concurrent.ConcurrentMap<String, java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>>> checkRegistry = new ConcurrentHashMap<>();
         private final java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks;
         private final ParserRegistry parserRegistry;
+        private final String leakageScenarioName;
+        private final scala.collection.immutable.List<String> leakageGroup;
 
         private KafkaProtocol(Map<String, Object> producerProperties, Map<String, Object> consumerProperties,
                 ActorSystem actorSystem, int numProducers, int numConsumers, RequestStore requestStore,
@@ -323,8 +418,10 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 String correlationHeaderName, boolean useTimestampHeader, String transactionalId,
                 boolean measureStoreLatency,
                 Duration retryBackoff, int maxRetries, boolean syncCommit,
+                boolean awaitConsumersReady, boolean seekToEndOnReady, Duration consumerReadyTimeout,
                 java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> globalChecks,
-                ParserRegistry parserRegistry) {
+                ParserRegistry parserRegistry, String leakageScenarioName,
+                scala.collection.immutable.List<String> leakageGroup) {
             this.producerProperties = producerProperties;
             this.consumerProperties = consumerProperties;
             this.actorSystem = actorSystem;
@@ -341,9 +438,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             this.retryBackoff = retryBackoff;
             this.maxRetries = maxRetries;
             this.syncCommit = syncCommit;
+            this.awaitConsumersReady = awaitConsumersReady;
+            this.seekToEndOnReady = seekToEndOnReady;
+            this.consumerReadyTimeout = consumerReadyTimeout;
             this.globalChecks = globalChecks != null ? new java.util.ArrayList<>(globalChecks)
                     : java.util.Collections.emptyList();
             this.parserRegistry = parserRegistry;
+            this.leakageScenarioName = leakageScenarioName;
+            this.leakageGroup = leakageGroup;
         }
 
         public java.util.List<pl.perfluencer.kafka.MessageCheck<?, ?>> getGlobalChecks() {
@@ -410,6 +512,18 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
             return syncCommit;
         }
 
+        public boolean isAwaitConsumersReady() {
+            return awaitConsumersReady;
+        }
+
+        public boolean isSeekToEndOnReady() {
+            return seekToEndOnReady;
+        }
+
+        public Duration getConsumerReadyTimeout() {
+            return consumerReadyTimeout;
+        }
+
         public String getTransactionalId() {
             return transactionalId;
         }
@@ -465,6 +579,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
         public ParserRegistry getParserRegistry() {
             return parserRegistry;
         }
+
+        public String getLeakageScenarioName() {
+            return leakageScenarioName;
+        }
+
+        public scala.collection.immutable.List<String> getLeakageGroup() {
+            return leakageGroup;
+        }
     }
 
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
@@ -498,10 +620,14 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                     String transactionName = requestData.transactionName;
                     String scenarioName = requestData.scenarioName;
 
+                    // Log timeout under empty groups — the session that originally sent this
+                    // request no longer exists at timeout evaluation time (it may have moved
+                    // on to a different step or terminated). Using an empty list is the safe,
+                    // correct choice: logGroupEnd cannot be called here because no group was
+                    // entered on the current execution path.
                     coreComponents.statsEngine().logResponse(
                             scenarioName,
-                            scala.collection.immutable.List$.MODULE$.from(scala.jdk.javaapi.CollectionConverters
-                                    .asScala(java.util.Collections.singletonList("End-to-End Group"))),
+                            scala.collection.immutable.List$.MODULE$.empty(),
                             transactionName,
                             startTime,
                             endTime,
@@ -680,7 +806,12 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                 retryBackoff,
                 maxRetries,
                 syncCommit,
+                awaitConsumersReady,
+                seekToEndOnReady,
+                consumerReadyTimeout,
                 globalChecks,
-                parserRegistry);
+                parserRegistry,
+                leakageScenarioName,
+                leakageGroup);
     }
 }

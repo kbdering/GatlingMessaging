@@ -20,8 +20,10 @@ import java.util.concurrent.TimeUnit
  * Session API for key/value and shows how to add checks and timeouts.
  */
 class KafkaRequestReplyScalaSimulation extends Simulation {
+  pl.perfluencer.kafka.integration.TestConfig.init()
 
-  private val BOOTSTRAP_SERVERS = System.getProperty("kafka.bootstrap.servers", "192.168.1.143:9094")
+
+  private val BOOTSTRAP_SERVERS = System.getProperty("kafka.bootstrap.servers", "localhost:9092")
   private val REQUEST_TOPIC = "lab-rr-scala-topic"
 
   val kafkaProtocol = kafka()

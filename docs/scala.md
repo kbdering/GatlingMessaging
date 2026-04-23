@@ -4,21 +4,26 @@ The Gatling Kafka Extension's Java API can be used directly from **Scala** simul
 
 ## Prerequisites
 
-The `gatling-maven-plugin` handles Scala compilation natively via its `compile` goal. Ensure your `pom.xml` includes it:
+Gatling 4.0+ no longer compiles Scala code natively. Bring in the `scala-maven-plugin` to compile your sources under `src/test/scala/`:
 
 ```xml
 <plugin>
-    <groupId>io.gatling</groupId>
-    <artifactId>gatling-maven-plugin</artifactId>
-    <version>4.21.0</version>
+    <groupId>net.alchim31.maven</groupId>
+    <artifactId>scala-maven-plugin</artifactId>
+    <version>4.9.1</version>
     <executions>
         <execution>
-            <goals>
-                <goal>compile</goal>
-                <goal>test</goal>
-            </goals>
+            <goals><goal>testCompile</goal></goals>
         </execution>
     </executions>
+    <configuration>
+        <scalaVersion>2.13.14</scalaVersion>
+    </configuration>
+</plugin>
+```
+
+Alternatively, newer versions of the `gatling-maven-plugin` (v4.x+) can handle compilation if configured appropriately. For this project, we explicitly use the `scala-maven-plugin` for fine-grained control over test compilation.
+
 </plugin>
 ```
 
@@ -91,7 +96,8 @@ There are **two ways** to access Gatling session variables from Scala:
     )
     ```
 
-Both approaches work equivalently. The `keyScala`/`valueScala` variants are available on `KafkaFireAndForget`, `KafkaRequestReply`, and their header counterparts.
+Both approaches work equivalently. The `keyScala` and `valueScala` variants are available on `KafkaFireAndForget` and `KafkaRequestReply`.
+For headers, you can use `headerScala(key, session => ...)` or pass a mixed Java/Scala map to `headers(Map<String, Object>)` where values can be `scala.Function1`.
 
 ## Fire-and-Forget Example
 

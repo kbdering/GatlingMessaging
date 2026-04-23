@@ -28,6 +28,21 @@ mvn clean package -DskipTests
 mvn clean test
 ```
 
+### Local Development Environment
+
+This project uses a `.env.testcontainers` file (ignored by Git) to manage environment-specific configurations without hardcoding IPs or credentials in the source code.
+
+1. **Create the file**: Copy `.env.example` (if available) or create a new `.env.testcontainers` in the project root.
+2. **Configure properties**:
+   ```ini
+   KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+   SCHEMA_REGISTRY_URL=http://localhost:8081
+   # Optional: Specific Docker strategy for ARM/M1/M2 Macs
+   TESTCONTAINERS_DOCKER_CLIENT_STRATEGY=org.testcontainers.dockerclient.UnixSocketClientProviderStrategy
+   ```
+
+All simulations call `TestConfig.init()` to dynamically load these properties into `System` properties at runtime.
+
 ## Key Capabilities & Design Philosophy
 
 This framework is designed not just to generate load, but to act as a precise instrument for measuring the **end-to-end quality of service** of your event-driven architecture.

@@ -227,7 +227,9 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
                             concreteProtocol.isUseTimestampHeader(),
                             concreteProtocol.getRetryBackoff(),
                             concreteProtocol.getMaxRetries(),
-                            concreteProtocol.getParserRegistry());
+                            concreteProtocol.getParserRegistry(),
+                            concreteProtocol.getLeakageGroup(),
+                            concreteProtocol.getLeakageScenarioName());
 
                     // Create consumer threads
                     LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).debug(
@@ -242,16 +244,36 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
                                 ctx.coreComponents().statsEngine(),
                                 concreteProtocol.getPollTimeout(),
                                 concreteProtocol.isSyncCommit(),
-                                i);
+                                i,
+                                null, // consumeOnlyRequestName
+                                null, // consumeOnlyScenarioName
+                                List$.MODULE$.empty(), // statsGroup
+                                concreteProtocol.isSeekToEndOnReady());
                         thread.start();
                         consumerThreads.add(thread);
                     }
-                    LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).debug(
-                            "Successfully started {} consumer threads for topic: {}", consumerThreads.size(),
-                            responseTopic);
 
-                    concreteProtocol.putConsumerAndProcessor(responseTopic,
-                            new KafkaProtocolBuilder.ConsumerAndProcessor(consumerThreads, messageProcessor));
+                    KafkaProtocolBuilder.ConsumerAndProcessor cap = new KafkaProtocolBuilder.ConsumerAndProcessor(
+                            consumerThreads, messageProcessor);
+
+                    // Optional synchronization barrier: block until consumers have partitions
+                    if (concreteProtocol.isAwaitConsumersReady() && !consumerThreads.isEmpty()) {
+                        long start = System.currentTimeMillis();
+                        LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).info(
+                                "Waiting for Kafka consumers to be ready for topic: {} (timeout: {})",
+                                responseTopic, concreteProtocol.getConsumerReadyTimeout());
+
+                        if (!cap.awaitAllReady(concreteProtocol.getConsumerReadyTimeout())) {
+                            throw new IllegalStateException("Kafka consumers for topic " + responseTopic +
+                                    " failed to become ready within " + concreteProtocol.getConsumerReadyTimeout());
+                        }
+
+                        LoggerFactory.getLogger(KafkaRequestReplyActionBuilder.class).info(
+                                "Kafka consumers for topic: {} are ready after {}ms",
+                                responseTopic, (System.currentTimeMillis() - start));
+                    }
+
+                    concreteProtocol.putConsumerAndProcessor(responseTopic, cap);
                 }
 
                 return new KafkaRequestReplyAction(requestName, concreteProtocol, ctx.coreComponents(), next,
@@ -271,9 +293,6 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
 class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaRequestReplyAction.class);
-    private static final scala.collection.immutable.List<String> ACK_GROUP = scala.collection.immutable.List$.MODULE$
-            .from(
-                    scala.jdk.javaapi.CollectionConverters.asScala(java.util.Collections.singletonList("ACK Group")));
     private final String requestName;
     private final Action next;
     private final CoreComponents coreComponents;
@@ -363,7 +382,7 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
             requestStore.storeRequest(new RequestData(correlationId, resolvedKey, skipPayloadStorage ? null : valueObj,
                     serializationType, requestName,
-                    session.scenario(), startTime, timeUnit.toMillis(timeout), sessionVars));
+                    session.scenario(), startTime, timeUnit.toMillis(timeout), sessionVars, session.groups()));
             long storeEnd = coreComponents.clock().nowMillis();
 
             if (((KafkaProtocolBuilder.KafkaProtocol) kafkaProtocol).isMeasureStoreLatency()) {
@@ -435,14 +454,16 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                     logger.error("Kafka Producer Send Error (Async Callback)", exception);
                     handleFailure(session, statsEngine, startTime, endTime, exception, finalCorrelationId);
                 } else {
-                    statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " send", startTime,
+                    // Log ACK metric ungrouped (empty groups) intentionally.
+                    // The E2E metric (logged in MessageProcessor) uses session.groups() and
+                    // correctly contributes to any user-defined group's cumulated time.
+                    // If we used session.groups() here too, a .group("X") wrapper would
+                    // double-count: group cumulated = ACK ms + E2E ms, but E2E already
+                    // contains the ACK period. Keeping "send" ungrouped prevents that.
+                    statsEngine.logResponse(session.scenario(), scala.collection.immutable.List$.MODULE$.empty(),
+                            requestName + " send", startTime,
                             endTime, Status.apply("OK"),
                             scala.Option.empty(), scala.Option.empty());
-
-                    statsEngine.logGroupEnd(session.scenario(),
-                            new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                                    Status.apply("OK")),
-                            endTime);
 
                     next.execute(session);
                 }
@@ -460,14 +481,11 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         requestStore.deleteRequest(correlationId);
 
         session.markAsFailed();
-        statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " Send Failed", startTime,
+        statsEngine.logResponse(session.scenario(), session.groups(), requestName + " Send Failed", startTime,
                 endTime,
                 Status.apply("KO"),
                 scala.Some.apply("500"), scala.Some.apply("Send Failed: " + e.getMessage()));
-        statsEngine.logGroupEnd(session.scenario(),
-                new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                        Status.apply("KO")),
-                endTime);
+
         logger.error("Kafka Request-Reply Send failed", e);
         next.execute(session);
     }

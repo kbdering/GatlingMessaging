@@ -18,9 +18,11 @@ package pl.perfluencer.kafka.consumers;
 
 import io.gatling.commons.stats.Status;
 import io.gatling.core.stats.StatsEngine;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.CommitFailedException;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,8 +30,11 @@ import pl.perfluencer.kafka.MessageProcessor;
 import scala.Option;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -47,7 +52,9 @@ public class KafkaConsumerThread extends Thread {
     private final String responseTopic;
     private final boolean syncCommit;
     private final AtomicBoolean running = new AtomicBoolean(true);
-    private final scala.collection.immutable.List<String> statsGroup; // Added field
+    private final scala.collection.immutable.List<String> statsGroup;
+    private final boolean seekToEndOnReady;
+    private final CountDownLatch readyLatch = new CountDownLatch(1);
 
     // Consume-only mode fields (no correlation, just apply checks to every record)
     private final String consumeOnlyRequestName;
@@ -57,7 +64,7 @@ public class KafkaConsumerThread extends Thread {
             MessageProcessor messageProcessor, StatsEngine statsEngine,
             Duration pollDuration, boolean syncCommit, int threadId) {
         this(consumerProperties, responseTopic, messageProcessor, statsEngine, pollDuration, syncCommit, threadId,
-                null, null, scala.collection.immutable.List$.MODULE$.empty()); // Updated call
+                null, null, scala.collection.immutable.List$.MODULE$.empty(), false);
     }
 
     /**
@@ -70,24 +77,35 @@ public class KafkaConsumerThread extends Thread {
             Duration pollDuration, boolean syncCommit, int threadId,
             String consumeOnlyRequestName, String consumeOnlyScenarioName) {
         this(consumerProperties, responseTopic, messageProcessor, statsEngine, pollDuration, syncCommit, threadId,
-                consumeOnlyRequestName, consumeOnlyScenarioName, scala.collection.immutable.List$.MODULE$.empty()); // Updated
-                                                                                                                    // call
+                consumeOnlyRequestName, consumeOnlyScenarioName, scala.collection.immutable.List$.MODULE$.empty(),
+                false);
     }
 
-    // New constructor with statsGroup
+    // Constructor with statsGroup
     public KafkaConsumerThread(Map<String, Object> consumerProperties, String responseTopic,
             MessageProcessor messageProcessor, StatsEngine statsEngine,
             Duration pollDuration, boolean syncCommit, int threadId,
             String consumeOnlyRequestName, String consumeOnlyScenarioName,
             scala.collection.immutable.List<String> statsGroup) {
+        this(consumerProperties, responseTopic, messageProcessor, statsEngine, pollDuration, syncCommit, threadId,
+                consumeOnlyRequestName, consumeOnlyScenarioName, statsGroup, false);
+    }
+
+    // Full constructor with seekToEndOnReady
+    public KafkaConsumerThread(Map<String, Object> consumerProperties, String responseTopic,
+            MessageProcessor messageProcessor, StatsEngine statsEngine,
+            Duration pollDuration, boolean syncCommit, int threadId,
+            String consumeOnlyRequestName, String consumeOnlyScenarioName,
+            scala.collection.immutable.List<String> statsGroup, boolean seekToEndOnReady) {
         super("KafkaConsumer-" + responseTopic + "-" + threadId);
         setDaemon(true);
         this.consumeOnlyRequestName = consumeOnlyRequestName;
         this.consumeOnlyScenarioName = consumeOnlyScenarioName;
-        this.statsGroup = statsGroup; // Initialize new field
+        this.statsGroup = statsGroup;
+        this.seekToEndOnReady = seekToEndOnReady;
 
-        logger.debug("Starting KafkaConsumerThread for topic: {} with group: {} (syncCommit={})",
-                responseTopic, consumerProperties.get("group.id"), syncCommit);
+        logger.debug("Starting KafkaConsumerThread for topic: {} with group: {} (syncCommit={}, seekToEndOnReady={})",
+                responseTopic, consumerProperties.get("group.id"), syncCommit, seekToEndOnReady);
 
         if (!consumerProperties.containsKey("auto.offset.reset")) {
             logger.warn(
@@ -107,13 +125,35 @@ public class KafkaConsumerThread extends Thread {
         this.statsEngine = statsEngine;
         this.responseTopic = responseTopic;
         this.syncCommit = syncCommit;
-        consumer.subscribe(Collections.singletonList(responseTopic));
+        consumer.subscribe(Collections.singletonList(responseTopic), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                logger.debug("Partitions revoked for topic {}: {}", responseTopic, partitions);
+            }
+
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                logger.info("Partitions assigned for topic {}: {}", responseTopic, partitions);
+                if (seekToEndOnReady && !partitions.isEmpty()) {
+                    consumer.seekToEnd(partitions);
+                    logger.info("Seeked to end of {} partitions for topic {}", partitions.size(), responseTopic);
+                }
+                readyLatch.countDown();
+            }
+        });
     }
 
     // Visible for testing
     public KafkaConsumerThread(org.apache.kafka.clients.consumer.Consumer<String, Object> consumer,
             String responseTopic, MessageProcessor messageProcessor, StatsEngine statsEngine,
             Duration pollDuration, boolean syncCommit, int threadId) {
+        this(consumer, responseTopic, messageProcessor, statsEngine, pollDuration, syncCommit, threadId, false);
+    }
+
+    // Visible for testing — with seekToEndOnReady
+    public KafkaConsumerThread(org.apache.kafka.clients.consumer.Consumer<String, Object> consumer,
+            String responseTopic, MessageProcessor messageProcessor, StatsEngine statsEngine,
+            Duration pollDuration, boolean syncCommit, int threadId, boolean seekToEndOnReady) {
         super("KafkaConsumer-" + responseTopic + "-" + threadId);
         setDaemon(true);
 
@@ -125,9 +165,24 @@ public class KafkaConsumerThread extends Thread {
         this.syncCommit = syncCommit;
         this.consumeOnlyRequestName = null;
         this.consumeOnlyScenarioName = null;
-        this.statsGroup = scala.collection.immutable.List$.MODULE$.empty(); // Initialize new field for testing
-                                                                            // constructor
-        consumer.subscribe(Collections.singletonList(responseTopic));
+        this.statsGroup = scala.collection.immutable.List$.MODULE$.empty();
+        this.seekToEndOnReady = seekToEndOnReady;
+        consumer.subscribe(Collections.singletonList(responseTopic), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                logger.debug("Partitions revoked for topic {}: {}", responseTopic, partitions);
+            }
+
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                logger.info("Partitions assigned for topic {}: {}", responseTopic, partitions);
+                if (seekToEndOnReady && !partitions.isEmpty()) {
+                    consumer.seekToEnd(partitions);
+                    logger.info("Seeked to end of {} partitions for topic {}", partitions.size(), responseTopic);
+                }
+                readyLatch.countDown();
+            }
+        });
     }
 
     @Override
@@ -298,5 +353,29 @@ public class KafkaConsumerThread extends Thread {
 
     public boolean isRunning() {
         return running.get();
+    }
+
+    /**
+     * Blocks until this consumer thread has been assigned partitions by the Kafka
+     * group coordinator, or the timeout expires.
+     *
+     * @param timeout maximum time to wait
+     * @return {@code true} if the consumer became ready, {@code false} on timeout
+     */
+    public boolean awaitReady(Duration timeout) {
+        try {
+            return readyLatch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * Returns whether this consumer has been assigned partitions and is ready to
+     * consume.
+     */
+    public boolean isReady() {
+        return readyLatch.getCount() == 0;
     }
 }

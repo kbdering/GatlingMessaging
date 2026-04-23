@@ -100,6 +100,8 @@ public interface RequestStore extends AutoCloseable {
         String START_TIME = "startTime";
         /** Map key for serialized session variables (JSON-encoded Map). */
         String SESSION_VARIABLES = "sessionVariables";
+        /** Map key for Gatling groups (JSON-encoded List). */
+        String GROUPS = "groups";
 
         /**
          * Stores a request for later correlation with its response.

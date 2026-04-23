@@ -193,8 +193,12 @@ public class KafkaFireAndForget implements ActionBuilder {
                 this.headers.put(entry.getKey(), (Function<Session, String>) entry.getValue());
             } else if (entry.getValue() instanceof String) {
                 this.headers.put(entry.getKey(), KafkaDsl.toJavaFunction((String) entry.getValue()));
+            } else if (entry.getValue() instanceof scala.Function1<?, ?>) {
+                scala.Function1<io.gatling.core.session.Session, String> scalaFunc = (scala.Function1<io.gatling.core.session.Session, String>) entry
+                        .getValue();
+                this.headers.put(entry.getKey(), session -> scalaFunc.apply(session.asScala()));
             } else {
-                throw new IllegalArgumentException("Header value must be a String or Function<Session, String>");
+                throw new IllegalArgumentException("Header value must be a String, Function<Session, String>, or scala.Function1<Session, String>");
             }
         }
         return this;

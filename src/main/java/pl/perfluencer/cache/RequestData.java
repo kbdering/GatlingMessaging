@@ -34,10 +34,11 @@ public class RequestData {
     public final long startTime;
     public final long timeoutMillis;
     public final Map<String, String> sessionVariables;
+    public final scala.collection.immutable.List<String> groups;
 
     public RequestData(String correlationId, String key, Object value, SerializationType serializationType,
             String transactionName, String scenarioName, long startTime, long timeoutMillis,
-            Map<String, String> sessionVariables) {
+            Map<String, String> sessionVariables, scala.collection.immutable.List<String> groups) {
         this.correlationId = correlationId;
         this.key = key;
         this.value = value;
@@ -47,6 +48,17 @@ public class RequestData {
         this.startTime = startTime;
         this.timeoutMillis = timeoutMillis;
         this.sessionVariables = sessionVariables;
+        this.groups = groups;
+    }
+
+    /**
+     * Legacy constructor for benchmarks and tests that don't use groups.
+     */
+    public RequestData(String correlationId, String key, Object value, SerializationType serializationType,
+            String transactionName, String scenarioName, long startTime, long timeoutMillis,
+            Map<String, String> sessionVariables) {
+        this(correlationId, key, value, serializationType, transactionName, scenarioName, startTime, timeoutMillis,
+                sessionVariables, scala.collection.immutable.List$.MODULE$.empty());
     }
 
 }

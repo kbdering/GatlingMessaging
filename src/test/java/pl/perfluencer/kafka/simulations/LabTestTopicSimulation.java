@@ -22,6 +22,7 @@ import pl.perfluencer.cache.InMemoryRequestStore;
 import pl.perfluencer.cache.RequestStore;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import pl.perfluencer.common.util.SerializationType;
 import pl.perfluencer.kafka.MessageCheck;
@@ -49,9 +50,14 @@ import static io.gatling.javaapi.core.CoreDsl.*;
  */
 public class LabTestTopicSimulation extends Simulation {
 
+    static {
+        TestConfig.init();
+    }
+
+
         // Configuration - can be overridden with system properties
-        private static final String BOOTSTRAP_SERVERS = System.getProperty(
-                        "kafka.bootstrap.servers", "192.168.1.143:9094");
+    private static final String BOOTSTRAP_SERVERS = System.getProperty(
+                    "kafka.bootstrap.servers", "localhost:9092");
         private static final String TOPIC = System.getProperty(
                         "kafka.topic", "lab-test-topic");
 

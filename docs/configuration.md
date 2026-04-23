@@ -95,3 +95,30 @@ The most important consumer property is **`numConsumers`**.
 * **Default**: 1
 * **Impact**: Number of background Gatling threads polling the response topic.
 * **Best Practice**: Set this equal to the number of **partitions** of your test topic. Having more consumers than partitions is a waste of resource (they will sit idle).
+
+## Consumer Synchronization & Startup Behavior
+
+By default, Gatling's Producer threads start injecting traffic as soon as the simulation begins. In Kafka, this can lead to a race condition where the first few messages are produced before the Consumer threads have successfully joined their consumer group and been assigned partitions, leading to lost response metrics.
+
+You can synchronize the startup behavior using the following protocol settings:
+
+```java
+KafkaProtocolBuilder protocol = kafka()
+    .bootstrapServers("localhost:9092")
+    .numConsumers(3)
+    
+    // 1. Block scenario startup until all consumers are ready
+    .awaitConsumersReady(true)
+    
+    // 2. Maximum time to wait for the group join/assignment to finish
+    .consumerReadyTimeout(Duration.ofSeconds(15))
+    
+    // 3. Skip pre-existing messages on the topic partitions
+    .seekToEndOnReady(true);
+```
+
+### When to use these settings:
+
+*   **`awaitConsumersReady(true)`**: Recommended for any test where you require 100% metric accuracy from the very first request. The simulation will block during initialization until the group assignment is confirmed.
+*   **`seekToEndOnReady(true)`**: Essential when testing against topics that might contain residue from previous runs or offset gaps. Once the consumer is assigned partitions, it will immediately seek to the latest offset, ensuring it only processes messages sent *during* the current simulation.
+

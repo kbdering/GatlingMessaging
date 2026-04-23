@@ -20,7 +20,9 @@ import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.core.Simulation;
 import pl.perfluencer.kafka.javaapi.KafkaDsl;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 import pl.perfluencer.kafka.javaapi.KafkaProtocolBuilder;
+import pl.perfluencer.kafka.integration.TestConfig;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -58,8 +60,13 @@ import static pl.perfluencer.kafka.MessageCheck.*;
  */
 public class KafkaAvroSchemaRegistrySimulation extends Simulation {
 
-        private static final String BOOTSTRAP_SERVERS = System.getProperty(
-                        "kafka.bootstrap.servers", "192.168.1.143:9094");
+    static {
+        TestConfig.init();
+    }
+
+
+    private static final String BOOTSTRAP_SERVERS = System.getProperty(
+                    "kafka.bootstrap.servers", "localhost:9092");
         private static final String SCHEMA_REGISTRY_URL = System.getProperty(
                         "schema.registry.url", "http://localhost:8081");
         private static final String TOPIC = System.getProperty(

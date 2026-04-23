@@ -152,7 +152,8 @@ public class KafkaConsumeActionBuilder<T> implements ActionBuilder {
                             concreteProtocol.getRetryBackoff(),
                             concreteProtocol.getMaxRetries(),
                             concreteProtocol.getParserRegistry(),
-                            CONSUME_ONLY_GROUP);
+                            CONSUME_ONLY_GROUP,
+                            concreteProtocol.getLeakageScenarioName());
 
                     // Create consumer threads in consume-only mode
                     java.util.List<pl.perfluencer.kafka.consumers.KafkaConsumerThread> consumerThreads = new java.util.ArrayList<>();
@@ -168,13 +169,33 @@ public class KafkaConsumeActionBuilder<T> implements ActionBuilder {
                                 i,
                                 requestName, // consume-only request name
                                 scenarioName, // consume-only scenario name
-                                CONSUME_ONLY_GROUP);
+                                CONSUME_ONLY_GROUP,
+                                concreteProtocol.isSeekToEndOnReady());
                         thread.start();
                         consumerThreads.add(thread);
                     }
 
-                    concreteProtocol.putConsumerAndProcessor(topic,
-                            new KafkaProtocolBuilder.ConsumerAndProcessor(consumerThreads, messageProcessor));
+                    KafkaProtocolBuilder.ConsumerAndProcessor cap = new KafkaProtocolBuilder.ConsumerAndProcessor(
+                            consumerThreads, messageProcessor);
+
+                    // Optional synchronization barrier
+                    if (concreteProtocol.isAwaitConsumersReady() && !consumerThreads.isEmpty()) {
+                        long start = System.currentTimeMillis();
+                        org.slf4j.LoggerFactory.getLogger(KafkaConsumeActionBuilder.class).info(
+                                "Waiting for Kafka consumers to be ready for topic: {} (timeout: {})",
+                                topic, concreteProtocol.getConsumerReadyTimeout());
+
+                        if (!cap.awaitAllReady(concreteProtocol.getConsumerReadyTimeout())) {
+                            throw new IllegalStateException("Kafka consumers for topic " + topic +
+                                    " failed to become ready within " + concreteProtocol.getConsumerReadyTimeout());
+                        }
+
+                        org.slf4j.LoggerFactory.getLogger(KafkaConsumeActionBuilder.class).info(
+                                "Kafka consumers for topic: {} are ready after {}ms",
+                                topic, (System.currentTimeMillis() - start));
+                    }
+
+                    concreteProtocol.putConsumerAndProcessor(topic, cap);
                 }
 
                 // The action itself is a pass-through — consumers do the work in background
