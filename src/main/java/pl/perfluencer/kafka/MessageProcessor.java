@@ -449,12 +449,6 @@ public class MessageProcessor {
                             status,
                             responseCode,
                             errorMessage);
-
-                    statsEngine.logGroupEnd(
-                            scenarioName,
-                            new io.gatling.core.session.GroupBlock(MessageProcessor.this.statsGroup, startTime,
-                                    (int) (endTime - startTime), status),
-                            endTime);
                 }
             });
         } catch (Exception e) {
