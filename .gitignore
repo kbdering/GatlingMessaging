@@ -21,3 +21,4 @@ tls-certs/broker-*
 jmeter.log
 test_output.log
 final_test_output.txt
+.env.testcontainers
