@@ -293,9 +293,6 @@ public class KafkaRequestReplyActionBuilder<ReqT, ResT> implements ActionBuilder
 class KafkaRequestReplyAction implements io.gatling.core.action.Action {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaRequestReplyAction.class);
-    private static final scala.collection.immutable.List<String> ACK_GROUP = scala.collection.immutable.List$.MODULE$
-            .from(
-                    scala.jdk.javaapi.CollectionConverters.asScala(java.util.Collections.singletonList("ACK Group")));
     private final String requestName;
     private final Action next;
     private final CoreComponents coreComponents;
@@ -457,14 +454,9 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                     logger.error("Kafka Producer Send Error (Async Callback)", exception);
                     handleFailure(session, statsEngine, startTime, endTime, exception, finalCorrelationId);
                 } else {
-                    statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " send", startTime,
+                    statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
                             endTime, Status.apply("OK"),
                             scala.Option.empty(), scala.Option.empty());
-
-                    statsEngine.logGroupEnd(session.scenario(),
-                            new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                                    Status.apply("OK")),
-                            endTime);
 
                     next.execute(session);
                 }
@@ -482,14 +474,11 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
         requestStore.deleteRequest(correlationId);
 
         session.markAsFailed();
-        statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " Send Failed", startTime,
+        statsEngine.logResponse(session.scenario(), session.groups(), requestName + " Send Failed", startTime,
                 endTime,
                 Status.apply("KO"),
                 scala.Some.apply("500"), scala.Some.apply("Send Failed: " + e.getMessage()));
-        statsEngine.logGroupEnd(session.scenario(),
-                new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                        Status.apply("KO")),
-                endTime);
+
         logger.error("Kafka Request-Reply Send failed", e);
         next.execute(session);
     }
