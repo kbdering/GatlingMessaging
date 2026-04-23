@@ -454,7 +454,14 @@ class KafkaRequestReplyAction implements io.gatling.core.action.Action {
                     logger.error("Kafka Producer Send Error (Async Callback)", exception);
                     handleFailure(session, statsEngine, startTime, endTime, exception, finalCorrelationId);
                 } else {
-                    statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
+                    // Log ACK metric ungrouped (empty groups) intentionally.
+                    // The E2E metric (logged in MessageProcessor) uses session.groups() and
+                    // correctly contributes to any user-defined group's cumulated time.
+                    // If we used session.groups() here too, a .group("X") wrapper would
+                    // double-count: group cumulated = ACK ms + E2E ms, but E2E already
+                    // contains the ACK period. Keeping "send" ungrouped prevents that.
+                    statsEngine.logResponse(session.scenario(), scala.collection.immutable.List$.MODULE$.empty(),
+                            requestName + " send", startTime,
                             endTime, Status.apply("OK"),
                             scala.Option.empty(), scala.Option.empty());
 
