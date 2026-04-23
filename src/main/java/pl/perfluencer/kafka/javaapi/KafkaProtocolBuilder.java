@@ -590,9 +590,6 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
     }
 
     public static final class KafkaProtocolComponents implements io.gatling.core.protocol.ProtocolComponents {
-        private static final scala.collection.immutable.List<String> TIMEOUTS_GROUP = scala.collection.immutable.List$.MODULE$
-                .from(scala.jdk.javaapi.CollectionConverters
-                        .asScala(java.util.Collections.singletonList("End to End")));
         private final KafkaProtocol kafkaProtocol;
         private final CoreComponents coreComponents;
         private java.util.concurrent.ScheduledExecutorService metricScheduler;
@@ -623,21 +620,20 @@ public final class KafkaProtocolBuilder implements ProtocolBuilder {
                     String transactionName = requestData.transactionName;
                     String scenarioName = requestData.scenarioName;
 
+                    // Log timeout under empty groups — the session that originally sent this
+                    // request no longer exists at timeout evaluation time (it may have moved
+                    // on to a different step or terminated). Using an empty list is the safe,
+                    // correct choice: logGroupEnd cannot be called here because no group was
+                    // entered on the current execution path.
                     coreComponents.statsEngine().logResponse(
                             scenarioName,
-                            TIMEOUTS_GROUP,
+                            scala.collection.immutable.List$.MODULE$.empty(),
                             transactionName,
                             startTime,
                             endTime,
                             io.gatling.commons.stats.Status.apply("KO"),
                             scala.Option.apply("504"),
                             scala.Option.apply("Request timed out"));
-
-                    coreComponents.statsEngine().logGroupEnd(
-                            scenarioName,
-                            new io.gatling.core.session.GroupBlock(TIMEOUTS_GROUP, startTime,
-                                    (int) (endTime - startTime), io.gatling.commons.stats.Status.apply("KO")),
-                            endTime);
                 }
             });
 
