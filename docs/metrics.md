@@ -24,12 +24,64 @@ details("Checkout-send").responseTime().percentile99().lt(50)
 ```
 *(Note: Fine-grain store latency metrics are disabled by default. Enable via `.measureStoreLatency(true)` on the ProtocolBuilder).*
 
-### Report Groups (ACK vs E-2-E)
+### Report Layout (ACK vs E2E)
 
-When viewing the generated Gatling HTML report, you will notice that metrics are organized into specific groups (folders) to help distinguish between isolated network phases:
+The two metrics produced per `requestReply()` action appear as separate flat rows in the Gatling HTML report's Global Statistics table:
 
-* **`ACK Group`**: Measurements inside this folder represent the pure network time it takes to push a message from the Gatling Producer to the Kafka Broker and receive the configured acknowledgment (e.g., `acks=all`). If this metric is high or experiencing timeouts, the Kafka cluster is struggling to ingest data, or the producer network is congested. It does not measure any downstream processing.
-* **`E-2-E Group`** (End-to-End): Measurements inside this folder represent the full round-trip lifecycle of a `requestReply()` action. The timer starts when Gatling sends the request, and only stops when the background Consumer thread receives the final correlated response message from the downstream architecture. This metric encompasses the true latency experienced by your system's users.
+| Row | What it measures | Grouped? |
+|---|---|---|
+| `RequestName send` | Broker ACK latency — time from `producer.send()` to receiving the broker acknowledgment | **Always ungrouped** (global level) |
+| `RequestName` | Full End-to-End latency — time from sending the request to the consumer thread receiving the correlated reply | Inherits the user's `.group()` context |
+
+The `send` row is intentionally kept **ungrouped** regardless of what `.group()` block the simulation uses. This prevents double-counting: if the `send` also contributed to a group's cumulated time, the group total would be `ACK ms + E2E ms`, but since the E2E period already includes the ACK window the resulting aggregate would be misleading.
+
+#### Using Gatling's native `.group()` for folder organisation
+
+If you want the E2E metrics to appear nested under a named folder in the report, wrap the action using the standard Gatling group DSL:
+
+```java
+// Java DSL
+ScenarioBuilder scn = scenario("Order Flow")
+    .group("Checkout").on(
+        exec(
+            kafka("Place Order")
+                .requestReply()
+                .asString()
+                .requestTopic("orders")
+                .responseTopic("orders-reply")
+                .value(session -> "{\"id\":\"" + session.getString("orderId") + "\"}")
+        )
+    );
+```
+
+```scala
+// Scala DSL
+val scn = scenario("Order Flow")
+  .group("Checkout").on(
+    exec(
+      kafka("Place Order")
+        .requestReply()
+        .asString()
+        .requestTopic("orders")
+        .responseTopic("orders-reply")
+        .value(session => s"""{"id":"${session.getString("orderId")}"}""")
+        .asScala()
+    )
+  )
+```
+
+The resulting report will look like:
+
+```
+Global Statistics
+──────────────────────────────────────────────────
+Place Order send    1000   0   48ms   120ms   ← always at global level
+──────────────────────────────────────────────────
+▼ Checkout                                    ← your .group() folder
+    Place Order     1000   2  312ms   980ms   ← E2E metric nested here
+──────────────────────────────────────────────────
+```
+
 
 ---
 
