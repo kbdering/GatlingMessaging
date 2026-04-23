@@ -230,9 +230,6 @@ public class KafkaActionBuilder implements ActionBuilder {
 class KafkaSendAction implements io.gatling.core.action.Action {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaSendAction.class);
-    private static final scala.collection.immutable.List<String> ACK_GROUP = scala.collection.immutable.List$.MODULE$
-            .from(
-                    scala.jdk.javaapi.CollectionConverters.asScala(java.util.Collections.singletonList("ACK Group")));
     private final String requestName;
     private final Action next;
     private final CoreComponents coreComponents;
@@ -324,14 +321,9 @@ class KafkaSendAction implements io.gatling.core.action.Action {
                 }
             });
             long endTime = coreComponents.clock().nowMillis();
-            statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " send", startTime,
+            statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
                     endTime, Status.apply("OK"),
                     scala.Some.apply("200"), scala.Some.apply("Async Send"));
-
-            statsEngine.logGroupEnd(session.scenario(),
-                    new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                            Status.apply("OK")),
-                    endTime);
 
             next.execute(session);
             return;
@@ -343,14 +335,9 @@ class KafkaSendAction implements io.gatling.core.action.Action {
             if (exception != null) {
                 handleFailure(session, statsEngine, startTime, endTime, exception);
             } else {
-                statsEngine.logResponse(session.scenario(), ACK_GROUP, requestName + " send", startTime,
+                statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
                         endTime, Status.apply("OK"),
                         scala.Some.apply("200"), scala.Option.empty());
-
-                statsEngine.logGroupEnd(session.scenario(),
-                        new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                                Status.apply("OK")),
-                        endTime);
 
                 next.execute(session);
             }
@@ -360,14 +347,9 @@ class KafkaSendAction implements io.gatling.core.action.Action {
     private void handleFailure(io.gatling.core.session.Session session, StatsEngine statsEngine, long startTime,
             long endTime, Throwable e) {
         session.markAsFailed();
-        statsEngine.logResponse(session.scenario(), ACK_GROUP, name(), startTime, endTime,
+        statsEngine.logResponse(session.scenario(), session.groups(), name(), startTime, endTime,
                 Status.apply("KO"),
                 scala.Some.apply("500"), scala.Some.apply("ERROR: " + e.getMessage()));
-
-        statsEngine.logGroupEnd(session.scenario(),
-                new io.gatling.core.session.GroupBlock(ACK_GROUP, startTime, (int) (endTime - startTime),
-                        Status.apply("KO")),
-                endTime);
 
         logger.error("Error sending Kafka message", e);
         next.execute(session);
