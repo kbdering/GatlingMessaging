@@ -728,6 +728,34 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#consumer-synchronization-startup-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consumer Synchronization &amp; Startup Behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Consumer Synchronization &amp; Startup Behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-to-use-these-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to use these settings:
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1206,6 +1234,27 @@
 <li><strong>Default</strong>: 1</li>
 <li><strong>Impact</strong>: Number of background Gatling threads polling the response topic.</li>
 <li><strong>Best Practice</strong>: Set this equal to the number of <strong>partitions</strong> of your test topic. Having more consumers than partitions is a waste of resource (they will sit idle).</li>
+</ul>
+<h2 id="consumer-synchronization-startup-behavior">Consumer Synchronization &amp; Startup Behavior</h2>
+<p>By default, Gatling's Producer threads start injecting traffic as soon as the simulation begins. In Kafka, this can lead to a race condition where the first few messages are produced before the Consumer threads have successfully joined their consumer group and been assigned partitions, leading to lost response metrics.</p>
+<p>You can synchronize the startup behavior using the following protocol settings:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">KafkaProtocolBuilder</span><span class="w"> </span><span class="n">protocol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kafka</span><span class="p">()</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="p">.</span><span class="na">bootstrapServers</span><span class="p">(</span><span class="s">&quot;localhost:9092&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="p">.</span><span class="na">numConsumers</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="c1">// 1. Block scenario startup until all consumers are ready</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="p">.</span><span class="na">awaitConsumersReady</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="c1">// 2. Maximum time to wait for the group join/assignment to finish</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="p">.</span><span class="na">consumerReadyTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">15</span><span class="p">))</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="c1">// 3. Skip pre-existing messages on the topic partitions</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="p">.</span><span class="na">seekToEndOnReady</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+</code></pre></div>
+<h3 id="when-to-use-these-settings">When to use these settings:</h3>
+<ul>
+<li><strong><code>awaitConsumersReady(true)</code></strong>: Recommended for any test where you require 100% metric accuracy from the very first request. The simulation will block during initialization until the group assignment is confirmed.</li>
+<li><strong><code>seekToEndOnReady(true)</code></strong>: Essential when testing against topics that might contain residue from previous runs or offset gaps. Once the consumer is assigned partitions, it will immediately seek to the latest offset, ensuring it only processes messages sent <em>during</em> the current simulation.</li>
 </ul>
 
 

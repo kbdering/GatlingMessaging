@@ -1025,13 +1025,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#report-groups-ack-vs-e-2-e" class="md-nav__link">
+  <a href="#report-layout-ack-vs-e2e" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Report Groups (ACK vs E-2-E)
+        Report Layout (ACK vs E2E)
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Report Layout (ACK vs E2E)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-gatlings-native-group-for-folder-organisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Gatling's native .group() for folder organisation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -1169,33 +1186,89 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">details</span><span class="p">(</span><span class="s">&quot;Checkout-send&quot;</span><span class="p">).</span><span class="na">responseTime</span><span class="p">().</span><span class="na">percentile99</span><span class="p">().</span><span class="na">lt</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
 </code></pre></div>
 <em>(Note: Fine-grain store latency metrics are disabled by default. Enable via <code>.measureStoreLatency(true)</code> on the ProtocolBuilder).</em></p>
-<h3 id="report-groups-ack-vs-e-2-e">Report Groups (ACK vs E-2-E)</h3>
-<p>When viewing the generated Gatling HTML report, you will notice that metrics are organized into specific groups (folders) to help distinguish between isolated network phases:</p>
-<ul>
-<li><strong><code>ACK Group</code></strong>: Measurements inside this folder represent the pure network time it takes to push a message from the Gatling Producer to the Kafka Broker and receive the configured acknowledgment (e.g., <code>acks=all</code>). If this metric is high or experiencing timeouts, the Kafka cluster is struggling to ingest data, or the producer network is congested. It does not measure any downstream processing.</li>
-<li><strong><code>E-2-E Group</code></strong> (End-to-End): Measurements inside this folder represent the full round-trip lifecycle of a <code>requestReply()</code> action. The timer starts when Gatling sends the request, and only stops when the background Consumer thread receives the final correlated response message from the downstream architecture. This metric encompasses the true latency experienced by your system's users.</li>
-</ul>
+<h3 id="report-layout-ack-vs-e2e">Report Layout (ACK vs E2E)</h3>
+<p>The two metrics produced per <code>requestReply()</code> action appear as separate flat rows in the Gatling HTML report's Global Statistics table:</p>
+<table>
+<thead>
+<tr>
+<th>Row</th>
+<th>What it measures</th>
+<th>Grouped?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RequestName send</code></td>
+<td>Broker ACK latency — time from <code>producer.send()</code> to receiving the broker acknowledgment</td>
+<td><strong>Always ungrouped</strong> (global level)</td>
+</tr>
+<tr>
+<td><code>RequestName</code></td>
+<td>Full End-to-End latency — time from sending the request to the consumer thread receiving the correlated reply</td>
+<td>Inherits the user's <code>.group()</code> context</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>send</code> row is intentionally kept <strong>ungrouped</strong> regardless of what <code>.group()</code> block the simulation uses. This prevents double-counting: if the <code>send</code> also contributed to a group's cumulated time, the group total would be <code>ACK ms + E2E ms</code>, but since the E2E period already includes the ACK window the resulting aggregate would be misleading.</p>
+<h4 id="using-gatlings-native-group-for-folder-organisation">Using Gatling's native <code>.group()</code> for folder organisation</h4>
+<p>If you want the E2E metrics to appear nested under a named folder in the report, wrap the action using the standard Gatling group DSL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// Java DSL</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">ScenarioBuilder</span><span class="w"> </span><span class="n">scn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scenario</span><span class="p">(</span><span class="s">&quot;Order Flow&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;Checkout&quot;</span><span class="p">).</span><span class="na">on</span><span class="p">(</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="n">exec</span><span class="p">(</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">            </span><span class="n">kafka</span><span class="p">(</span><span class="s">&quot;Place Order&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">                </span><span class="p">.</span><span class="na">requestReply</span><span class="p">()</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">                </span><span class="p">.</span><span class="na">asString</span><span class="p">()</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">                </span><span class="p">.</span><span class="na">requestTopic</span><span class="p">(</span><span class="s">&quot;orders&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">                </span><span class="p">.</span><span class="na">responseTopic</span><span class="p">(</span><span class="s">&quot;orders-reply&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">                </span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="n">session</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="s">&quot;{\&quot;id\&quot;:\&quot;&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">session</span><span class="p">.</span><span class="na">getString</span><span class="p">(</span><span class="s">&quot;orderId&quot;</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\&quot;}&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">        </span><span class="p">)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="p">);</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// Scala DSL</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kd">val</span><span class="w"> </span><span class="n">scn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scenario</span><span class="p">(</span><span class="s">&quot;Order Flow&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="p">.</span><span class="n">group</span><span class="p">(</span><span class="s">&quot;Checkout&quot;</span><span class="p">).</span><span class="n">on</span><span class="p">(</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="n">exec</span><span class="p">(</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="n">kafka</span><span class="p">(</span><span class="s">&quot;Place Order&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">        </span><span class="p">.</span><span class="n">requestReply</span><span class="p">()</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="p">.</span><span class="n">asString</span><span class="p">()</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="p">.</span><span class="n">requestTopic</span><span class="p">(</span><span class="s">&quot;orders&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">        </span><span class="p">.</span><span class="n">responseTopic</span><span class="p">(</span><span class="s">&quot;orders-reply&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="p">.</span><span class="n">value</span><span class="p">(</span><span class="n">session</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s">s&quot;&quot;&quot;{&quot;id&quot;:&quot;</span><span class="si">${</span><span class="n">session</span><span class="p">.</span><span class="n">getString</span><span class="p">(</span><span class="s">&quot;orderId&quot;</span><span class="p">)</span><span class="si">}</span><span class="s">&quot;}&quot;&quot;&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">        </span><span class="p">.</span><span class="n">asScala</span><span class="p">()</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="p">)</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="p">)</span>
+</code></pre></div>
+<p>The resulting report will look like:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Global Statistics
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>──────────────────────────────────────────────────
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Place Order send    1000   0   48ms   120ms   ← always at global level
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>──────────────────────────────────────────────────
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>▼ Checkout                                    ← your .group() folder
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    Place Order     1000   2  312ms   980ms   ← E2E metric nested here
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>──────────────────────────────────────────────────
+</code></pre></div>
 <hr />
 <h2 id="metric-injection-jmx-internal-extraction">Metric Injection (JMX Internal Extraction)</h2>
 <p>The Gatling Kafka extension uses the official Apache Kafka Java clients internally. These clients automatically expose an incredibly rich array of diagnostics via <strong>JMX (Java Management Extensions)</strong>.</p>
 <p>You can tell the Gatling extension to routinely actively scrape these internal JMX metrics and inject them directly into your HTML report as pseudo-requests!</p>
 <h3 id="enabling-metric-injection">Enabling Metric Injection</h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">KafkaProtocolBuilder</span><span class="w"> </span><span class="n">protocol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kafka</span><span class="p">()</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="c1">// Extract consumer/producer telemetry every exactly 1,000 milliseconds</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p">.</span><span class="na">metricInjectionInterval</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">));</span><span class="w"> </span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">KafkaProtocolBuilder</span><span class="w"> </span><span class="n">protocol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kafka</span><span class="p">()</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="c1">// Extract consumer/producer telemetry every exactly 1,000 milliseconds</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="p">.</span><span class="na">metricInjectionInterval</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">));</span><span class="w"> </span>
 </code></pre></div>
 <p>Once enabled, metrics appear in Gatling reports underneath a dummy request group named <code>"Kafka Metrics"</code>.</p>
 <h3 id="jmx-gatling-assertions">JMX Gatling Assertions</h3>
 <p>The most dangerous scenario in messaging is silent consumer lag accumulation. Your API might be receiving requests fast (P99 &lt; 10ms HTTP), but the background workers are burying themselves in depth, leading to ultimate catastrophe. </p>
 <p>Instead of waiting for timeouts, use Injected Metrics to instantly fail Gatling builds if internal system health deteriorates!</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">setUp</span><span class="p">(</span><span class="n">scn</span><span class="p">.</span><span class="na">injectOpen</span><span class="p">(...))</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="p">.</span><span class="na">assertions</span><span class="p">(</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">        </span><span class="c1">// Fail the CI build if the Kafka consumer falls behind by more than 100 messages anywhere</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">        </span><span class="n">details</span><span class="p">(</span><span class="s">&quot;Kafka Metrics&quot;</span><span class="p">).</span><span class="na">max</span><span class="p">(</span><span class="s">&quot;kafka-consumer-lag-max&quot;</span><span class="p">).</span><span class="na">lt</span><span class="p">(</span><span class="mi">100</span><span class="p">),</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">        </span><span class="c1">// Fail immediately if there was a sudden burst of internal IO Producer errors</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="n">details</span><span class="p">(</span><span class="s">&quot;Kafka Metrics&quot;</span><span class="p">).</span><span class="na">max</span><span class="p">(</span><span class="s">&quot;kafka-producer-record-error-rate&quot;</span><span class="p">).</span><span class="na">is</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">setUp</span><span class="p">(</span><span class="n">scn</span><span class="p">.</span><span class="na">injectOpen</span><span class="p">(...))</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span><span class="p">.</span><span class="na">assertions</span><span class="p">(</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">        </span><span class="c1">// Fail the CI build if the Kafka consumer falls behind by more than 100 messages anywhere</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">        </span><span class="n">details</span><span class="p">(</span><span class="s">&quot;Kafka Metrics&quot;</span><span class="p">).</span><span class="na">max</span><span class="p">(</span><span class="s">&quot;kafka-consumer-lag-max&quot;</span><span class="p">).</span><span class="na">lt</span><span class="p">(</span><span class="mi">100</span><span class="p">),</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">        </span><span class="c1">// Fail immediately if there was a sudden burst of internal IO Producer errors</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">        </span><span class="n">details</span><span class="p">(</span><span class="s">&quot;Kafka Metrics&quot;</span><span class="p">).</span><span class="na">max</span><span class="p">(</span><span class="s">&quot;kafka-producer-record-error-rate&quot;</span><span class="p">).</span><span class="na">is</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="p">);</span>
 </code></pre></div>
 <h3 id="available-injected-jmx-paths">Available Injected JMX Paths</h3>
 <ul>
