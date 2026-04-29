@@ -1,0 +1,6 @@
+protocol UserProtocol {
+    record User {
+        string name;
+        int age;
+    }
+}

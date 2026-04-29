@@ -6,7 +6,7 @@
 
     <groupId>pl.perfluencer</groupId>
     <artifactId>gatling-kafka-oss</artifactId>
-    <version>0.9.3-beta</version>
+    <version>0.9.4</version>
 
     <name>Resilience-First Messaging Framework (OSS)</name>
     <description>A resilience-first messaging framework for high-integrity load testing, built on Gatling and Kafka</description>
@@ -186,6 +186,12 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>kafka</artifactId>
             <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro-compiler</artifactId>
+            <version>1.12.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
