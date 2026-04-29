@@ -275,81 +275,90 @@ class KafkaSendAction implements io.gatling.core.action.Action {
         final StatsEngine statsEngine = coreComponents.statsEngine();
         final Session javaSession = new Session(session);
 
-        String resolvedKey = key.apply(javaSession);
-        Object resolvedValue = value.apply(javaSession);
-
-        java.util.Map<String, String> resolvedHeaders;
-        if (headers.isEmpty()) {
-            resolvedHeaders = java.util.Collections.emptyMap();
-        } else {
-            resolvedHeaders = new java.util.HashMap<>(headers.size());
-            for (java.util.Map.Entry<String, Function<Session, String>> entry : headers.entrySet()) {
-                resolvedHeaders.put(entry.getKey(), entry.getValue().apply(javaSession));
-            }
-        }
-
-        String correlationId = resolvedKey != null ? resolvedKey : java.util.UUID.randomUUID().toString();
-
-        org.apache.kafka.clients.producer.KafkaProducer<String, Object> producer = kafkaProtocol.getProducer();
-        if (producer == null) {
-            long startTime = coreComponents.clock().nowMillis();
-            handleFailure(session, statsEngine, startTime, startTime,
-                    new RuntimeException("No Kafka Producers available"));
-            return;
-        }
-
-        // The value is sent directly — the Kafka producer serializer handles the type
-        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, resolvedKey, resolvedValue);
-        if (correlationId != null) {
-            record.headers().add(correlationHeaderName, correlationId.getBytes(StandardCharsets.UTF_8));
-        }
-        if (resolvedHeaders != null) {
-            for (java.util.Map.Entry<String, String> entry : resolvedHeaders.entrySet()) {
-                if (entry.getValue() != null) {
-                    record.headers().add(entry.getKey(), entry.getValue().getBytes(StandardCharsets.UTF_8));
-                }
-            }
-        }
-
         long startTime = coreComponents.clock().nowMillis();
 
-        if (!waitForAck) {
-            // Fire and forget
-            producer.send(record, (metadata, exception) -> {
-                if (exception != null) {
-                    logger.error("Kafka Async Send Failed", exception);
-                }
-            });
-            long endTime = coreComponents.clock().nowMillis();
-            statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
-                    endTime, Status.apply("OK"),
-                    scala.Some.apply("200"), scala.Some.apply("Async Send"));
+        try {
+            String resolvedKey = key.apply(javaSession);
+            Object resolvedValue = value.apply(javaSession);
 
-            next.execute(session);
-            return;
-        }
-
-        // Wait for Ack
-        producer.send(record, (metadata, exception) -> {
-            long endTime = coreComponents.clock().nowMillis();
-            if (exception != null) {
-                handleFailure(session, statsEngine, startTime, endTime, exception);
+            java.util.Map<String, String> resolvedHeaders;
+            if (headers.isEmpty()) {
+                resolvedHeaders = java.util.Collections.emptyMap();
             } else {
+                resolvedHeaders = new java.util.HashMap<>(headers.size());
+                for (java.util.Map.Entry<String, Function<Session, String>> entry : headers.entrySet()) {
+                    resolvedHeaders.put(entry.getKey(), entry.getValue().apply(javaSession));
+                }
+            }
+
+            String correlationId = resolvedKey != null ? resolvedKey : java.util.UUID.randomUUID().toString();
+
+            org.apache.kafka.clients.producer.KafkaProducer<String, Object> producer = kafkaProtocol.getProducer();
+            if (producer == null) {
+                handleFailure(session, statsEngine, startTime, startTime,
+                        new RuntimeException("No Kafka Producers available"));
+                return;
+            }
+
+            // The value is sent directly — the Kafka producer serializer handles the type
+            ProducerRecord<String, Object> record = new ProducerRecord<>(topic, resolvedKey, resolvedValue);
+            if (correlationId != null) {
+                record.headers().add(correlationHeaderName, correlationId.getBytes(StandardCharsets.UTF_8));
+            }
+            if (resolvedHeaders != null) {
+                for (java.util.Map.Entry<String, String> entry : resolvedHeaders.entrySet()) {
+                    if (entry.getValue() != null) {
+                        record.headers().add(entry.getKey(), entry.getValue().getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            }
+
+            if (!waitForAck) {
+                // Fire and forget
+                producer.send(record, (metadata, exception) -> {
+                    if (exception != null) {
+                        logger.error("Kafka Async Send Failed", exception);
+                    }
+                });
+                long endTime = coreComponents.clock().nowMillis();
                 statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
                         endTime, Status.apply("OK"),
-                        scala.Some.apply("200"), scala.Option.empty());
+                        scala.Some.apply("200"), scala.Some.apply("Async Send"));
 
                 next.execute(session);
+                return;
             }
-        });
+
+            // Wait for Ack
+            producer.send(record, (metadata, exception) -> {
+                long endTime = coreComponents.clock().nowMillis();
+                if (exception != null) {
+                    handleFailure(session, statsEngine, startTime, endTime, exception);
+                } else {
+                    statsEngine.logResponse(session.scenario(), session.groups(), requestName + " send", startTime,
+                            endTime, Status.apply("OK"),
+                            scala.Some.apply("200"), scala.Option.empty());
+
+                    next.execute(session);
+                }
+            });
+        } catch (Exception e) {
+            handleFailure(session, statsEngine, startTime, coreComponents.clock().nowMillis(), e);
+        }
     }
 
     private void handleFailure(io.gatling.core.session.Session session, StatsEngine statsEngine, long startTime,
             long endTime, Throwable e) {
         session.markAsFailed();
+
+        String errorMessage = e.getClass().getSimpleName() + ": " + e.getMessage();
+        if (e.getCause() != null) {
+            errorMessage += " (Cause: " + e.getCause().getMessage() + ")";
+        }
+
         statsEngine.logResponse(session.scenario(), session.groups(), name(), startTime, endTime,
                 Status.apply("KO"),
-                scala.Some.apply("500"), scala.Some.apply("ERROR: " + e.getMessage()));
+                scala.Some.apply("500"), scala.Some.apply(errorMessage));
 
         logger.error("Error sending Kafka message", e);
         next.execute(session);
